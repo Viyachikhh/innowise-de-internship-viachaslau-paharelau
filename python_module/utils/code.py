@@ -2,8 +2,6 @@ import json
 import psycopg
 import yaml
 
-# from psycopg import execute_values
-
 
 class DatabaseContext:
 
@@ -23,10 +21,32 @@ class DatabaseContext:
         self.conn.close()
 
 
-class StudentsDatabaseInterface:
+class StudentsDatabase:
 
     def __init__(self, path_to_config):
         self.__context_object__ = DatabaseContext(path_to_config=path_to_config)
+
+        sql_create = """
+        create table rooms (
+	            rid serial primary key, 
+	            rname varchar
+                );
+
+        create table students (
+	            sid serial primary key,
+	            birthday timestamp,
+	            sname varchar,
+	            room serial references rooms(rid) ON DELETE CASCADE ON UPDATE CASCADE,
+	            sex char(1),
+	            check (sex in ('F', 'M'))
+                );
+        
+        create index r_number ON students (room);
+        create index birthday ON students (birthday);
+        """
+
+        with self.__context_object__ as cursor:
+            cursor.execute(sql_create)
 
     def load_rooms(self, rooms_path):
 
