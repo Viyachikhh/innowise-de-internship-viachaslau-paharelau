@@ -3,8 +3,8 @@ import json
 from utils.code import StudentsDatabase
 
 interface = StudentsDatabase('postgresql.yaml')
-interface.load_rooms('rooms.json')
-interface.load_students('students.json')
+interface.load_rooms('data/rooms.json')
+interface.load_students('data/students.json')
 
 sql_1 = 'select room, count(*) as students_count from students group by room order by students_count desc'
 sql_2 = 'select room, cast(avg(extract (year from age(now(), birthday))) as int) as avg_age from students group by room order by avg_age limit 5;'
