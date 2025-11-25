@@ -2,7 +2,7 @@ import psycopg
 import yaml
 
 
-class DatabaseContext:
+class DatabaseConnection:
     """
     Менеджер контекста для работы с базой данных в PostgreSQL
     """
