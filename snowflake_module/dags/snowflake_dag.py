@@ -1,12 +1,20 @@
-from airflow.sdk import task, DAG
+from airflow import DAG
+from airflow.decorators import task
 from airflow.providers.snowflake.operators.snowflake import SnowflakeSqlApiOperator, SQLExecuteQueryOperator
 from pendulum import datetime
+from datetime import timedelta
 
 
-default_args = {"snowflake_conn_id": "snowflake_conn", "conn_id": "snowflake_conn"}
+with DAG(dag_id="lms_snowflake_task", 
+        start_date=datetime(2025, 11, 11), 
+        schedule="@daily", 
+        default_args = {"snowflake_conn_id": "snowflake_default", 
+        "conn_id": "snowflake_default"},
+        catchup=False) as dag:
 
-with DAG(dag_id="lms_snowflake_task", start_date=datetime(2025, 11, 11), schedule="@daily", default_args=default_args) as dag:
-
+    @task(task_id='test')
+    def print_test():
+        print("snowflake_deafult")
 
     raw_to_stage = SQLExecuteQueryOperator(
         task_id='id_snowflake_from_raw_to_stage',
@@ -18,5 +26,5 @@ with DAG(dag_id="lms_snowflake_task", start_date=datetime(2025, 11, 11), schedul
         sql="USE WAREHOUSE COMPUTE_WH;\nUSE SCHEMA STAGE;\ncall airline.STAGE.pr_data_from_stage_to_analytics();"
         )
 
-    raw_to_stage >> stage_to_analytics
+    print_test() >> raw_to_stage >> stage_to_analytics
     
