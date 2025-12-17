@@ -6,7 +6,7 @@ from db.db_query_exec import *
 
 
 def main():
-	executor = DatabaseQueryExecutor('postgresql.yaml')
+	executor = DatabaseQueryExecutor()
 
 	rooms_init(executor.connection)
 	load_rooms_data(executor.connection)

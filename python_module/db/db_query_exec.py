@@ -5,16 +5,12 @@ from db.context import DatabaseConnection
 
 class DatabaseQueryExecutor:
 
-    def __init__(self, path_to_config):
-        self.__connection = DatabaseConnection(path_to_config=path_to_config)
+    def __init__(self):
+        self.__connection = DatabaseConnection()
 
     @property
     def connection(self):
         return self.__connection
-
-    @connection.setter
-    def connection(self, another_config_path: str):
-        self.__connection = DatabaseConnection(path_to_config=another_config_path)
 
     @connection.deleter
     def connection(self):
@@ -32,3 +28,4 @@ class DatabaseQueryExecutor:
         with open('result/' + sql_result_name + '.json', 'w') as file:
             json.dump(result, file)
                 
+        print('OK!')

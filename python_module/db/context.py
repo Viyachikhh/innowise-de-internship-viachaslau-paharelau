@@ -1,5 +1,6 @@
+import os
 import psycopg
-import yaml
+
 
 
 class DatabaseConnection:
@@ -7,13 +8,21 @@ class DatabaseConnection:
     Менеджер контекста для работы с базой данных в PostgreSQL
     """
 
-    def __init__(self, path_to_config: str):
-
-        with open(path_to_config, 'r') as stream:
-            self.config_params = yaml.safe_load(stream)
+    def __init__(self):
+        self.dbname=os.getenv("POSTGRES_DB")
+        self.user=os.getenv("POSTGRES_USER")
+        self.password=os.getenv("POSTGRES_PASSWORD")
+        self.host=os.getenv("POSTGRES_HOST")
+        self.port=os.getenv("POSTGRES_PORT")
+    
 
     def __enter__(self) -> psycopg.cursor:
-        self.conn = psycopg.connect(**self.config_params)
+        print(self.dbname)
+        self.conn = psycopg.connect(dbname=self.dbname,
+                                    user=self.user,
+                                    password=self.password,
+                                    host=self.host,
+                                    port=self.port)
         self.cursor = self.conn.cursor()
         return self.cursor
 
