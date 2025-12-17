@@ -1,0 +1,43 @@
+services:
+  # --- Сервис базы данных ---
+  postgres_db:
+    image: postgres:16
+    container_name: db_container
+    restart: always
+    # Читаем переменные из .env файла автоматически
+    env_file:
+      - .env
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+    # Проверка здоровья: Docker будет пинговать базу, пока она не ответит "Я готова"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Сервис Python (Ваши скрипты)
+  application:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: application
+    env_file:
+      - .env
+    environment:
+     DB_USER: ${POSTGRES_USER}
+     DB_PASSWORD: ${POSTGRES_PASSWORD}
+     DB_NAME: ${POSTGRES_DB}
+    volumes:
+      - ./db:/db
+      - ./result:/result
+      - ./main.py:/main.py
+      - ./data:/data
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+
+volumes:
+  pg_data:
