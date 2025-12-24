@@ -14,7 +14,7 @@ services:
     volumes:
       # Сохраняем данные, чтобы они не исчезли после перезагрузки
       - postgres_data:/var/lib/postgresql/data
-      - .init_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
   
   python-app:
     image: python:3.12-slim
@@ -22,7 +22,7 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-      - .data/:/app/data
+      - ./data/:/app/data
     command: >
       sh -c "pip install --upgrade pip && 
              pip install -r requirements.txt && 
