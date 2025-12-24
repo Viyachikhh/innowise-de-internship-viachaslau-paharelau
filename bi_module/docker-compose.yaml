@@ -1,0 +1,35 @@
+services:
+  # Наша база данных (PostgreSQL)
+  postgres:
+    image: postgres:16
+    container_name: powerbi_source_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Пробрасываем порт 5432 из контейнера на порт 5432 вашего компьютера
+      - "5434:5432"
+    volumes:
+      # Сохраняем данные, чтобы они не исчезли после перезагрузки
+      - postgres_data:/var/lib/postgresql/data
+      - .init_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+  
+  python-app:
+    image: python:3.12-slim
+    container_name: my_python_project
+    working_dir: /app
+    volumes:
+      - .:/app
+      - .data/:/app/data
+    command: >
+      sh -c "pip install --upgrade pip && 
+             pip install -r requirements.txt && 
+             python data_preprocessing.py"
+    # Для Windows/Mac полезно, чтобы видеть вывод сразу
+    tty: true 
+    stdin_open: true
+
+volumes:
+  postgres_data:
