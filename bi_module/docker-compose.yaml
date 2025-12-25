@@ -4,21 +4,22 @@ services:
     image: postgres:16
     container_name: powerbi_source_db
     restart: always
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      # Пробрасываем порт 5432 из контейнера на порт 5432 вашего компьютера
       - "5434:5432"
     volumes:
-      # Сохраняем данные, чтобы они не исчезли после перезагрузки
       - postgres_data:/var/lib/postgresql/data
-      - ./init_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init_scripts/init-schemas-and-tables.sql:/docker-entrypoint-initdb.d/1-init-schemas-and-tables.sql
+      - ./init_scripts/procedures.sql:/docker-entrypoint-initdb.d/2-procedures.sql
   
   python-app:
     image: python:3.12-slim
-    container_name: my_python_project
+    container_name: creating_secondary_input
     working_dir: /app
     volumes:
       - .:/app
