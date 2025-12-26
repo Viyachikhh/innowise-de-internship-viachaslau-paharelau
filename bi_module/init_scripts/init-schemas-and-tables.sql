@@ -38,10 +38,6 @@ CREATE TABLE IF NOT EXISTS stage.super_store (
 ---------------------------------------------------------------------------
 
 
-
-
-
-
 CREATE TABLE IF NOT EXISTS core.customers (
     customer_id SERIAL,
     customer_uniq_card CHAR(8),
@@ -54,8 +50,7 @@ CREATE TABLE IF NOT EXISTS core.customers (
     region VARCHAR(100),
     is_active BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY(customer_id),
-    UNIQUE (customer_uniq_card)
+    PRIMARY KEY(customer_id)
 );
 
 
@@ -65,8 +60,8 @@ CREATE TABLE IF NOT EXISTS core.orders (
     order_date DATE,
     ship_date DATE,
     ship_mode VARCHAR(25),
-    PRIMARY KEY(order_id),
-    UNIQUE (order_uniq_card)
+    PRIMARY KEY(order_id)
+    --UNIQUE (order_uniq_card)
 );
 
 
@@ -78,8 +73,8 @@ CREATE TABLE IF NOT EXISTS core.products (
     product_name VARCHAR(200),
     sales DECIMAL(10, 4),
     quantity INT,
-    PRIMARY KEY(product_id),
-    UNIQUE (product_uniq_card)
+    PRIMARY KEY(product_id)
+    --UNIQUE (product_uniq_card)
 );
 
 

@@ -2,8 +2,6 @@ CREATE OR REPLACE PROCEDURE stage.from_stage_to_core()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-
-
     ----------------------------- core.products
     MERGE INTO core.products dest
     USING (
@@ -34,59 +32,77 @@ BEGIN
 
     ----------------------------- core.customers
     --таблица для (по)перехавших пользователей
-    CREATE TEMP TABLE core.moved_customers ( LIKE core.customers ) ;
-    
+    CREATE TEMP TABLE scd2 ( LIKE core.customers INCLUDING DEFAULTS) ;
+    --SELECT customer_id from scd2 limit 1;
     --вставка данных в таблицу
-    INSERT INTO core.moved_customers (customer_uniq_card, customer_name, 
+    INSERT INTO scd2 (customer_uniq_card, customer_name, 
                                         segment, country, city, 
                                         _state, postal_code, region, 
                                         is_active, updated_at)
     
-    SELECT DISTINCT customer_id, customer_name, 
-                    segment, country, city, 
-                    _state, postal_code, region, 
-                    is_active, updated_at 
+    SELECT DISTINCT ss.customer_id, ss.customer_name, 
+                    ss.segment, ss.country, ss.city, 
+                    ss._state, ss.postal_code, ss.region, 
+                    TRUE, NOW() 
                     FROM stage.super_store ss
-                    WHERE ss.customer_id IN (SELECT cc.order_uniq_card from core.customers cc) AND 
-                    (ss.customer_id, ss.region) NOT IN (SELECT cc.order_uniq_card, cc.region from core.customers cc);
+                    WHERE ss.customer_id IN (SELECT cc.customer_uniq_card from core.customers cc) AND 
+                    (ss.customer_id, ss.region) NOT IN (SELECT cc.customer_uniq_card, cc.region from core.customers cc);
+
+    --если так получилось, что в поток попали изменения одного и того же человека, возьмётся последняя запись о нём
+    UPDATE scd2
+    set is_active = FALSE
+    WHERE (customer_uniq_card, region) NOT IN (SELECT s21.customer_uniq_card, s21.region FROM 
+                                            (SELECT customer_uniq_card, region FROM scd2) s21 INNER JOIN 
+                                            (SELECT ROW_NUMBER() OVER (PARTITION BY customer_uniq_card 
+                                                                        ORDER BY customer_id DESC) as rn, 
+                                                                        customer_uniq_card, 
+                                                                        region FROM scd2) s22
+                                            ON s21.customer_uniq_card=s22.customer_uniq_card AND s21.region=s22.region
+                                            WHERE s22.rn = 1);
     --SCD Type 2
     --обновление пользователей, которые переехали из старого региона
     UPDATE core.customers cc
-    SET cc.is_active = FALSE
-    WHERE cc.customer_uniq_card IN (select t.customer_uniq_card from core.moved_customers t) AND 
-    (cc.customer_uniq_card, cc.region) NOT IN (select t.customer_uniq_card, t.region from core.moved_customers t) AND cc.is_active = TRUE;
+    SET is_active = FALSE
+    WHERE cc.customer_uniq_card IN (select t.customer_uniq_card from scd2 t) AND 
+    (cc.customer_uniq_card, cc.region) NOT IN (select t.customer_uniq_card, t.region from scd2 t) AND cc.is_active = TRUE;
 
     --добавление пользователей, которые переехали, уже с новым регионом
     INSERT INTO core.customers (customer_uniq_card, customer_name, 
                                         segment, country, city, 
                                         _state, postal_code, region, 
                                         is_active, updated_at)
-    SELECT * FROM core.moved_customers;
+    SELECT customer_uniq_card, customer_name, 
+            segment, country, city, _state, 
+            postal_code, region, is_active, updated_at FROM scd2;
 
     --остальные случаи
     MERGE INTO core.customers dest
     USING (
-        SELECT DISTINCT customer_id, customer_name, 
+        SELECT DISTINCT customer_id as customer_uniq_card, customer_name, 
                     segment, country, city, 
                     _state, postal_code, region, 
-                    is_active, updated_at 
+                    TRUE, NOW() 
                     FROM stage.super_store 
         EXCEPT
-        SELECT * FROM core.moved_customers
+        SELECT customer_uniq_card, customer_name, 
+                    segment, country, city, 
+                    _state, postal_code, region, 
+                    TRUE, NOW() 
+                    FROM scd2
     ) src
-    ON src.customer_id = dest.order_uniq_card
+    ON src.customer_uniq_card = dest.customer_uniq_card
 
     --полный matched ничего не делает, т.е. если все данные совпадают
 
     --смена имени SCD Type 1
     WHEN MATCHED AND dest.customer_name IS DISTINCT FROM src.customer_name THEN
         UPDATE 
-        SET dest.customer_name = src.customer_name
+        SET customer_name = src.customer_name
             
     --новые данные
     WHEN NOT MATCHED THEN
-        INSERT (order_uniq_card, customer_name, segment, country, city, _state, postal_code, region, is_active, updated_at)
-        VALUES (src.order_uniq_card, src.customer_name, src.segment, 
+        INSERT (customer_uniq_card, customer_name, segment, country, city, _state, postal_code, region, is_active, updated_at)
+        VALUES (src.customer_uniq_card, src.customer_name, src.segment, 
                 src.country, src.city, src._state, 
                 src.postal_code, src.region, 
                 TRUE, NOW());
@@ -119,16 +135,15 @@ BEGIN
     ) src
     ON src.row_id = dest.sale_id
 
+    WHEN MATCHED AND dest.customer_id IS DISTINCT FROM src.customer_id THEN
+        UPDATE 
+        SET customer_id = src.customer_id
+
     WHEN NOT MATCHED THEN
         INSERT (sale_id, order_id, customer_id, product_id, discount, profit)
         VALUES (src.row_id, src.order_id, src.customer_id, src.product_id, src.discount, src.profit);
 
-    DROP TABLE core.moved_customers;
+    DROP TABLE scd2;
     TRUNCATE TABLE stage.super_store;
-
-
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE NOTICE 'Ошибка при обновлении товара ID %: %', p_id, SQLERRM;
 END;
 $$;

@@ -16,6 +16,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init_scripts/init-schemas-and-tables.sql:/docker-entrypoint-initdb.d/1-init-schemas-and-tables.sql
       - ./init_scripts/procedures.sql:/docker-entrypoint-initdb.d/2-procedures.sql
+      - ./init_scripts/etl-example.sql:/docker-entrypoint-initdb.d/3-etl-execute.sql
+      - ./csv_files:/file_storage 
   
   python-app:
     image: python:3.12-slim
@@ -23,7 +25,6 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-      - ./data/:/app/data
     command: >
       sh -c "pip install --upgrade pip && 
              pip install -r requirements.txt && 
