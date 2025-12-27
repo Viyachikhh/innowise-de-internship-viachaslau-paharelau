@@ -14,7 +14,7 @@ WITH (
 
 CALL stage.from_stage_to_core_v2();
 
-
+/*
 
 COPY stage.super_store (row_id, order_uniq_card, order_date, ship_date, 
                         ship_mode, customer_uniq_card, customer_name,
@@ -46,3 +46,8 @@ WITH (
 );
 
 CALL stage.from_stage_to_core_v2();
+*/
+
+
+----------- в mart слой
+CALL core.update_mart();

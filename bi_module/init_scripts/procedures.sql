@@ -1,158 +1,3 @@
-CREATE OR REPLACE PROCEDURE stage.from_stage_to_core()
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    ----------------------------- core.products
-    MERGE INTO core.products dest
-    USING (
-        SELECT DISTINCT product_id, category, sub_category, product_name, sales, quantity
-        FROM stage.super_store
-    ) src
-    ON src.product_id = dest.product_uniq_card
-            
-    WHEN NOT MATCHED THEN
-        INSERT (product_uniq_card, category, sub_category, product_name, sales, quantity)
-        VALUES (src.product_id, src.category, src.sub_category, src.product_name, src.sales, src.quantity);
-    ------------------------------------------
-
-    
-    ----------------------------- core.orders
-    MERGE INTO core.orders dest
-    USING (
-        SELECT DISTINCT order_id, order_date, ship_date, ship_mode
-        FROM stage.super_store
-    ) src
-    ON src.order_id = dest.order_uniq_card
-            
-    WHEN NOT MATCHED THEN
-        INSERT (order_uniq_card, order_date, ship_date, ship_mode)
-        VALUES (src.order_id, src.order_date, src.ship_date, src.ship_mode);
-    ------------------------------------------
-
-
-    ----------------------------- core.customers
-    --таблица для (по)перехавших пользователей
-    CREATE TEMP TABLE scd2 ( LIKE core.customers INCLUDING DEFAULTS) ;
-    --SELECT customer_id from scd2 limit 1;
-    --вставка данных в таблицу
-    INSERT INTO scd2 (customer_uniq_card, customer_name, 
-                                        segment, country, city, 
-                                        _state, postal_code, region, 
-                                        is_active, updated_at)
-    
-    SELECT DISTINCT ss.customer_id, ss.customer_name, 
-                    ss.segment, ss.country, ss.city, 
-                    ss._state, ss.postal_code, ss.region, 
-                    TRUE, NOW() 
-                    FROM stage.super_store ss
-                    WHERE ss.customer_id IN (SELECT cc.customer_uniq_card from core.customers cc) AND 
-                    (ss.customer_id, ss.region) NOT IN (SELECT cc.customer_uniq_card, cc.region from core.customers cc);
-
-    --если так получилось, что в поток попали изменения одного и того же человека, возьмётся последняя запись о нём
-    UPDATE scd2
-    set is_active = FALSE
-    WHERE (customer_uniq_card, region) NOT IN (SELECT s21.customer_uniq_card, s21.region FROM 
-                                            (SELECT customer_uniq_card, region FROM scd2) s21 INNER JOIN 
-                                            (SELECT ROW_NUMBER() OVER (PARTITION BY customer_uniq_card 
-                                                                        ORDER BY customer_id DESC) as rn, 
-                                                                        customer_uniq_card, 
-                                                                        region FROM scd2) s22
-                                            ON s21.customer_uniq_card=s22.customer_uniq_card AND s21.region=s22.region
-                                            WHERE s22.rn = 1);
-    --SCD Type 2
-    --обновление пользователей, которые переехали из старого региона
-    UPDATE core.customers cc
-    SET is_active = FALSE
-    WHERE cc.customer_uniq_card IN (select t.customer_uniq_card from scd2 t) AND 
-    (cc.customer_uniq_card, cc.region) NOT IN (select t.customer_uniq_card, t.region from scd2 t) AND cc.is_active = TRUE;
-
-    --добавление пользователей, которые переехали, уже с новым регионом
-    INSERT INTO core.customers (customer_uniq_card, customer_name, 
-                                        segment, country, city, 
-                                        _state, postal_code, region, 
-                                        is_active, updated_at)
-    SELECT customer_uniq_card, customer_name, 
-            segment, country, city, _state, 
-            postal_code, region, is_active, updated_at FROM scd2;
-
-    --остальные случаи
-    MERGE INTO core.customers dest
-    USING (
-        SELECT DISTINCT customer_id as customer_uniq_card, customer_name, 
-                    segment, country, city, 
-                    _state, postal_code, region, 
-                    TRUE, NOW() 
-                    FROM stage.super_store 
-        EXCEPT
-        SELECT customer_uniq_card, customer_name, 
-                    segment, country, city, 
-                    _state, postal_code, region, 
-                    TRUE, NOW() 
-                    FROM scd2
-    ) src
-    ON src.customer_uniq_card = dest.customer_uniq_card
-
-    --полный matched ничего не делает, т.е. если все данные совпадают
-
-    --смена имени SCD Type 1
-    WHEN MATCHED AND dest.customer_name IS DISTINCT FROM src.customer_name THEN
-        UPDATE 
-        SET customer_name = src.customer_name
-            
-    --новые данные
-    WHEN NOT MATCHED THEN
-        INSERT (customer_uniq_card, customer_name, segment, country, city, _state, postal_code, region, is_active, updated_at)
-        VALUES (src.customer_uniq_card, src.customer_name, src.segment, 
-                src.country, src.city, src._state, 
-                src.postal_code, src.region, 
-                TRUE, NOW());
-    --------------------------------------------------
-
-    ----------------------------- core.sales
-    MERGE INTO core.sales dest
-    USING (
-        SELECT DISTINCT ss.row_id, co.order_id, cc.customer_id, cp.product_id, ss.discount, ss.profit
-        FROM stage.super_store ss
-        INNER JOIN core.orders co ON co.order_uniq_card=ss.order_id AND
-                                     co.order_date=ss.order_date AND 
-                                     co.ship_date=ss.ship_date AND 
-                                     co.ship_mode=ss.ship_mode
-        INNER JOIN core.products cp ON cp.product_uniq_card=ss.product_id AND 
-                                    cp.category=ss.category AND 
-                                    cp.sub_category=ss.sub_category AND
-                                    cp.product_name=ss.product_name AND
-                                    cp.sales=ss.sales AND
-                                    cp.quantity=ss.quantity
-        INNER JOIN core.customers cc ON cc.customer_uniq_card=ss.customer_id AND 
-                                    cc.customer_name=ss.customer_name AND 
-                                    cc.segment=ss.segment AND
-                                    cc.country=ss.country AND
-                                    cc.city=ss.city AND
-                                    cc._state=ss._state AND
-                                    cc.postal_code=ss.postal_code AND
-                                    cc.region=ss.region
-        WHERE cc.is_active = TRUE                           
-    ) src
-    ON src.row_id = dest.sale_id
-
-    WHEN MATCHED AND dest.customer_id IS DISTINCT FROM src.customer_id THEN
-        UPDATE 
-        SET customer_id = src.customer_id
-
-    WHEN NOT MATCHED THEN
-        INSERT (sale_id, order_id, customer_id, product_id, discount, profit)
-        VALUES (src.row_id, src.order_id, src.customer_id, src.product_id, src.discount, src.profit);
-
-    DROP TABLE scd2;
-    TRUNCATE TABLE stage.super_store;
-END;
-$$;
-
-
-
-
-
-
 CREATE OR REPLACE PROCEDURE stage.from_stage_to_core_v2()
 LANGUAGE plpgsql
 AS $$
@@ -215,15 +60,15 @@ BEGIN
     -- выполнять не нужно, поэтому просто merge 
     MERGE INTO core.product_entities dest
         USING (
-            SELECT DISTINCT cpc.product_uniq_card, ss.product_name, ss.sales, ss.quantity 
+            SELECT DISTINCT cpc.product_uniq_card, ss.product_name 
             FROM stage.super_store ss
             INNER JOIN core.product_categories cpc ON ss.product_uniq_card=cpc.product_uniq_card
         ) src
         ON src.product_uniq_card=dest.product_uniq_card AND src.product_name=dest.product_name
 
         WHEN NOT MATCHED THEN 
-            INSERT (product_uniq_card, product_name, sales, quantity)
-            VALUES (src.product_uniq_card, src.product_name, src.sales, src.quantity);
+            INSERT (product_uniq_card, product_name)
+            VALUES (src.product_uniq_card, src.product_name);
     -------------------------------------------------
 
 
@@ -303,7 +148,7 @@ BEGIN
 
     ---------------------------------------------------------
     ----- orders
-    MERGE INTO core.orders dest
+    MERGE INTO core.order_statuses dest
         USING (
             SELECT DISTINCT order_uniq_card, order_date, ship_date, ship_mode 
             FROM stage.super_store
@@ -316,14 +161,14 @@ BEGIN
 
     ------------------------------------------------
     -- sales
-    MERGE INTO core.sales dest
+    MERGE INTO core.sale_info dest
     USING (
-        SELECT DISTINCT co.id as order_id, cca.customer_id, cpe.id as product_id, ss.discount, ss.profit
+        SELECT DISTINCT cos.id as order_id, cca.customer_id, cpe.id as product_id, ss.quantity, ss.discount, ss.profit, ss.sales
         FROM stage.super_store ss
-        INNER JOIN core.orders co ON co.order_uniq_card=ss.order_uniq_card AND
-                                     co.order_date=ss.order_date AND 
-                                     co.ship_date=ss.ship_date AND 
-                                     co.ship_mode=ss.ship_mode
+        INNER JOIN core.order_statuses cos ON cos.order_uniq_card=ss.order_uniq_card AND
+                                     cos.order_date=ss.order_date AND 
+                                     cos.ship_date=ss.ship_date AND 
+                                     cos.ship_mode=ss.ship_mode
         INNER JOIN core.product_entities cpe ON cpe.product_uniq_card=ss.product_uniq_card AND
                                                 cpe.product_name=ss.product_name
         INNER JOIN core.customers cc ON cc.customer_uniq_card=ss.customer_uniq_card
@@ -331,7 +176,7 @@ BEGIN
                                         cl._state=ss._state AND cl.postal_code=ss.postal_code AND
                                         cl.region=ss.region
         INNER JOIN core.customer_accounts cca ON cca.customer_id=cc.id AND cca.location_id=cl.id
-        WHERE cca.is_active = TRUE                           
+        --WHERE cca.is_active = TRUE                           
     ) src
     ON src.order_id = dest.order_id AND src.product_id = dest.product_id
 
@@ -340,8 +185,8 @@ BEGIN
         SET active_customer_id = src.customer_id
 
     WHEN NOT MATCHED THEN
-        INSERT (order_id, active_customer_id, product_id, discount, profit)
-        VALUES (src.order_id, src.customer_id, src.product_id, src.discount, src.profit);
+        INSERT (order_id, active_customer_id, product_id, quantity, discount, profit, sales)
+        VALUES (src.order_id, src.customer_id, src.product_id, src.quantity, src.discount, src.profit, src.sales);
 
     
     TRUNCATE TABLE stage.super_store;
@@ -349,3 +194,42 @@ BEGIN
     --*/
 END;
 $$;
+
+
+CREATE OR REPLACE PROCEDURE core.update_mart()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    TRUNCATE TABLE mart.analytic_sale_info;
+    INSERT INTO mart.analytic_sale_info (
+        order_date, ship_date, ship_mode, customer_name, segment,
+        country, city, _state, postal_code, region, category, sub_category, 
+        product_name, sales, quantity, discount, profit
+    )
+    SELECT DISTINCT
+            cos.order_date, 
+            cos.ship_date, 
+            cos.ship_mode, 
+            cc.customer_name, 
+            cc.segment,
+            cl.country, 
+            cl.city,
+            cl._state, 
+            cl.postal_code, 
+            cl.region, 
+            cpc.category, 
+            cpc.sub_category, 
+            cpe.product_name, 
+            csi.sales, 
+            csi.quantity, 
+            csi.discount, 
+            csi.profit
+            FROM core.sale_info csi
+            INNER JOIN core.order_statuses cos ON csi.order_id=cos.id
+            INNER JOIN core.customer_accounts cca ON csi.active_customer_id=cca.id
+            INNER JOIN core.product_entities cpe ON csi.product_id=cpe.id
+            INNER JOIN core.customers cc ON cca.customer_id=cc.id
+            INNER JOIN core.locations cl ON cca.location_id=cl.id
+            INNER JOIN core.product_categories cpc ON cpe.product_uniq_card=cpc.product_uniq_card;
+END;
+$$
