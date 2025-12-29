@@ -19,11 +19,14 @@ print(df_sample_copies.shape)
 df_sample_dcp1 = df.sample(200).drop_duplicates()
 df_sample_dcp1["Customer Name"] = df_sample_dcp1["Customer Name"].apply(lambda x: scd1())
 # когда в одном файле есть несколько изменений имени, позже правильно обработаю
-df_sample_dcp1 = df_sample_dcp1.drop_duplicates(subset=["Customer ID"])                                                                                                             
+df_sample_dcp1 = df_sample_dcp1.drop_duplicates()                                                                                                             
 print(df_sample_dcp1.shape)
 df_sample_dcp2 = df.sample(200).drop_duplicates()
 df_sample_dcp2["Region"] = df_sample_dcp2["Region"].apply(lambda x: scd2())
-print(df_sample_dcp2.shape)
 
-df_concatenated = pd.concat([df_sample_copies,df_sample_dcp1, df_sample_dcp2]).drop_duplicates(subset=["Row ID"])
+df_sample_combinative = df.sample(200).drop_duplicates()
+df_sample_combinative["Customer Name"] = df_sample_combinative["Customer Name"].apply(lambda x: scd1())
+df_sample_combinative["Region"] = df_sample_combinative["Region"].apply(lambda x: scd2())
+
+df_concatenated = pd.concat([df_sample_copies,df_sample_dcp1, df_sample_dcp2, df_sample_combinative]).drop_duplicates(subset=["Row ID"])
 df_concatenated.to_csv("csv_files/secondary_data.csv", index=False)
