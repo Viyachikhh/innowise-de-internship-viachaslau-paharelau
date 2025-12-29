@@ -2,27 +2,6 @@ CREATE OR REPLACE PROCEDURE stage.from_stage_to_core_v2()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    /*
-    CREATE TEMP TABLE unique_instances (LIKE stage.super_store);
-
-    WITH DuplicateCTE AS (
-    SELECT
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY customer_uniq_card
-            ORDER BY customer_name       
-        ) as row_num
-    FROM
-        stage.super_store
-    )
-    INSERT INTO unique_instances
-    SELECT row_id, order_uniq_card, order_date, ship_date, 
-                        ship_mode, customer_uniq_card, customer_name,
-                        segment, country, city, _state, postal_code, 
-                        region, product_uniq_card, category, sub_category, 
-                        product_name, sales, quantity, discount, profit
-    FROM DuplicateCTE 
-    WHERE row_num = 1;*/
     -------------------------------------------------
     ------- product_categories, customers и locations
     --обработки dcp1 для списков товаров нет необходимости, т.к. в датасете есть товары с одинаковыми product_id, но разными именами
@@ -35,11 +14,9 @@ BEGIN
            src.category=dest.category AND
            src.sub_category=dest.sub_category 
 
-        --новые
         WHEN NOT MATCHED THEN 
             INSERT (product_uniq_card, category, sub_category)
             VALUES (src.product_uniq_card, src.category, src.sub_category); 
-
 
     ---locations
     MERGE INTO core.locations dest
@@ -56,9 +33,17 @@ BEGIN
 
 
     --customers
+    WITH DuplicatesCustomerPairs as (
+        SELECT customer_uniq_card, 
+               customer_name, 
+               segment,
+               ROW_NUMBER() OVER (PARTITION BY customer_uniq_card ORDER BY customer_name DESC) as rn
+        FROM stage.super_store
+    )
     MERGE INTO core.customers dest
         USING (
-            SELECT DISTINCT customer_uniq_card, customer_name, segment FROM stage.super_store
+            SELECT DISTINCT customer_uniq_card, customer_name, segment FROM DuplicatesCustomerPairs
+            WHERE rn = 1
         ) src
         ON src.customer_uniq_card=dest.customer_uniq_card
 
