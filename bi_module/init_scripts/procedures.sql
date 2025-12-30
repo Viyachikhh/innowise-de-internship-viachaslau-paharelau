@@ -90,9 +90,7 @@ BEGIN
     INSERT INTO scd2 (customer_id, location_id, is_active, updated_at)
     SELECT DISTINCT cc.id, cl.id, TRUE, NOW() + INTERVAL '1 MINUTE' 
     FROM stage.super_store ss 
-    INNER JOIN core.customers cc ON ss.customer_uniq_card=cc.customer_uniq_card --AND 
-                                    --ss.customer_name=cc.customer_name AND
-                                    --ss.segment=cc.segment
+    INNER JOIN core.customers cc ON ss.customer_uniq_card=cc.customer_uniq_card
     INNER JOIN core.locations cl ON ss.country=cl.country AND ss.city=cl.city AND 
                                     ss._state=cl._state AND ss.postal_code=cl.postal_code AND 
                                     ss.region=cl.region
@@ -168,7 +166,7 @@ BEGIN
     -- sales
     MERGE INTO core.sale_info dest
     USING (
-        SELECT DISTINCT cos.id as order_id, cca.customer_id, cpe.id as product_id, ss.quantity, ss.discount, ss.profit, ss.sales
+        SELECT DISTINCT cos.id as order_id, cca.id as customer_id, cpe.id as product_id, ss.quantity, ss.discount, ss.profit, ss.sales
         FROM stage.super_store ss
         INNER JOIN core.order_statuses cos ON cos.order_uniq_card=ss.order_uniq_card AND
                                      cos.order_date=ss.order_date AND 
@@ -180,10 +178,10 @@ BEGIN
         INNER JOIN core.locations cl ON cl.country=ss.country AND cl.city=ss.city AND
                                         cl._state=ss._state AND cl.postal_code=ss.postal_code AND
                                         cl.region=ss.region
-        INNER JOIN core.customer_accounts cca ON cca.customer_id=cc.id AND cca.location_id=cl.id
-        --WHERE cca.is_active = TRUE                           
+        -- подзапрос для того, если хотим только актуальные записи вставлять
+        INNER JOIN (SELECT * FROM core.customer_accounts) cca ON cca.customer_id=cc.id AND cca.location_id=cl.id                           
     ) src
-    ON src.order_id = dest.order_id AND src.product_id = dest.product_id
+    ON src.order_id = dest.order_id AND src.product_id = dest.product_id AND src.customer_id = dest.active_customer_id
 
     WHEN MATCHED AND dest.active_customer_id IS DISTINCT FROM src.customer_id THEN
         UPDATE 

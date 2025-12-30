@@ -12,21 +12,22 @@ def scd2():
 df = pd.read_csv("file_storage/original_data.csv")
 
 new_names = ["A", "B", "C", "D", "E", "F", "G", "H"]
-new_locations = ["North-West", "North-East", "South-West", "South-East", "Center"]
+new_locations = ["North-West", "North-East", "South-West", "South-East", "North"]
 
-df_sample_copies = df.sample(200).drop_duplicates()
-print(df_sample_copies.shape)
-df_sample_dcp1 = df.sample(200).drop_duplicates()
+df_sample_copies = df.sample(200).drop_duplicates(subset=["Row ID"])
+
+df_sample_dcp1 = df.sample(200).drop_duplicates(subset=["Row ID"])
 df_sample_dcp1["Customer Name"] = df_sample_dcp1["Customer Name"].apply(lambda x: scd1())
-# когда в одном файле есть несколько изменений имени, позже правильно обработаю
 df_sample_dcp1 = df_sample_dcp1.drop_duplicates()                                                                                                             
-print(df_sample_dcp1.shape)
-df_sample_dcp2 = df.sample(200).drop_duplicates()
-df_sample_dcp2["Region"] = df_sample_dcp2["Region"].apply(lambda x: scd2())
 
-df_sample_combinative = df.sample(200).drop_duplicates()
+df_sample_dcp2 = df.sample(200).drop_duplicates(subset=["Row ID"])
+df_sample_dcp2["Region"] = df_sample_dcp2["Region"].apply(lambda x: scd2())
+df_sample_dcp2 = df_sample_dcp2.drop_duplicates()
+
+df_sample_combinative = df.sample(200).drop_duplicates(subset=["Row ID"])
 df_sample_combinative["Customer Name"] = df_sample_combinative["Customer Name"].apply(lambda x: scd1())
 df_sample_combinative["Region"] = df_sample_combinative["Region"].apply(lambda x: scd2())
+df_sample_combinative = df_sample_combinative.drop_duplicates()
 
 df_concatenated = pd.concat([df_sample_copies,df_sample_dcp1, df_sample_dcp2, df_sample_combinative]).drop_duplicates(subset=["Row ID"])
 df_concatenated.to_csv("csv_files/secondary_data.csv", index=False)
