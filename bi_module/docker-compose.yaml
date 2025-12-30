@@ -12,12 +12,24 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5434:5432"
+    depends_on:
+      generate_secondary:
+        condition: service_completed_successfully
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init_scripts/init-schemas-and-tables.sql:/docker-entrypoint-initdb.d/1-init-schemas-and-tables.sql
       - ./init_scripts/procedures.sql:/docker-entrypoint-initdb.d/2-procedures.sql
       - ./init_scripts/etl-example.sql:/docker-entrypoint-initdb.d/3-etl-execute.sql
-      - ./csv_files:/file_storage 
+      - ./csv_files:/file_storage
+
+
+  generate_secondary:
+    build: .
+    volumes:
+      - ./csv_files:/file_storage
+      - ./data_preprocessing.py:/data_preprocessing.py
+    command: python data_preprocessing.py
+       
 
 volumes:
   postgres_data:
