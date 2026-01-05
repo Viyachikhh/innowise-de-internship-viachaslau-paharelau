@@ -5,7 +5,7 @@ class AbstractRuleCheck(ABC):
 
     @classmethod
     @abstractmethod
-    def check(self):
+    def extract_critical(self):
         pass
 
     @abstractmethod   
@@ -13,11 +13,10 @@ class AbstractRuleCheck(ABC):
         pass
 
 
-
 class BaseErrorCheck(AbstractRuleCheck):
 
     @classmethod
-    def check(self, df):
+    def extract_critical(self, df, df_name):
         # извлекаем записи с ошибками
         df_errors = df.filter(pl.col("severity").is_in(["Error", "Fatal"]))
         # используем дату из unix, т.к. она более точная
@@ -28,21 +27,20 @@ class BaseErrorCheck(AbstractRuleCheck):
         stat = grouped.agg(pl.len().alias("common_error_count"),
                             pl.col("bundle_id").unique().alias("unique_error_bundle_list"),
                             pl.col("log_location").unique().alias("unique_log_location")).sort("common_error_count")
-        stat = stat.with_columns(pl.col("date_from_unix").alias("field"))[["field", "unique_log_location","common_error_count"]]
-        return stat.to_dicts()
+        stat = stat.with_columns(pl.col("date_from_unix").cast(str).alias("field"),
+                                 pl.lit("BaseErrorCheck").alias("error_type"),
+                                 pl.lit(df_name).alias("filename"))
+        result_cols = ["filename", "field", "error_type","unique_log_location","common_error_count"]
+        return stat[result_cols]
 
     def __repr__(self):
         return "At least 10 records within 1m-interval"
-        
-
-
 
 
 class BaseBundleErrorCheck(AbstractRuleCheck):
 
-
     @classmethod
-    def check(self, df):
+    def extract_critical(self, df, df_name):
         # извлекаем записи с ошибками
         df_errors = df.filter(pl.col("severity").is_in(["Error", "Fatal"]))
         # используем дату из unix, т.к. она более точная, также учитывая bundle_id
@@ -56,13 +54,12 @@ class BaseBundleErrorCheck(AbstractRuleCheck):
 
         stat = stat.with_columns(pl.concat_str([pl.col("bundle_id"), 
                                                 pl.col("date_from_unix")], 
-                                                separator=" ").alias("field"))[["field",
-                                                                                 "unique_log_location",
-                                                                                 "common_error_count"]]
-        return stat.to_dicts()
-
-
-            
+                                                separator=" ").alias("field"),
+                                                pl.lit("BaseBundleErrorCheck").alias("error_type"),
+                                                pl.lit(df_name).alias("filename"))
+        
+        result_cols = ["filename", "field", "error_type","unique_log_location","common_error_count"]
+        return stat[result_cols]
 
     def __repr__(self):
         return "At least 10 records within 1h-interval inside bundle_id"
