@@ -1,8 +1,8 @@
 services:
-
-  generate_secondary:
+  application:
     build: .
     volumes:
+      - ./src:/src
       - ./data:/logs
       - ./main.py:/main.py
     command: python main.py
