@@ -1,0 +1,121 @@
+x-airflow-common: &airflow-common
+  build: .
+  user: ${AIRFLOW_UID:-1000}
+  env_file: &airflow-common-envfile
+    - .env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    # Настройки подключения к Spark Master
+    SPARK_MASTER: "spark://spark-master:7077"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  # --- LOCALSTACK (AWS Emulator) ---
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,lambda,sns,sqs,dynamo
+    volumes:
+      - "./localstack_init:/etc/localstack/init/ready.d" # Если нужно создать бакет при старте
+
+  # --- POSTGRES (DB for Airflow) ---
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  # --- AIRFLOW INIT (Migration) ---
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    env_file:  *airflow-common-envfile
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+    volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts
+
+  # --- AIRFLOW WEBSERVER + SCHEDULER ---
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    env_file: *airflow-common-envfile
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    env_file: *airflow-common-envfile
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # --- SPARK CLUSTER ---
+  spark-master:
+    image: bitnamilegacy/spark:3.5.3
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8081:8080" # Spark UI
+      - "7077:7077"
+    volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts
+
+  spark-worker:
+    image: bitnamilegacy/spark:3.5.3
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-1}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-2G}
+    depends_on:
+      - spark-master
+    volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts
+    # deploy:
+    #  resources:
+    #    limits:
+          # Если в .env пусто, возьмет 0.50
+    #      cpus: '${WORKER_CPU_LIMIT:-0.50}'
+          # Если в .env пусто, возьмет 1G
+    #      memory: '${WORKER_MEM_LIMIT:-4G}'
