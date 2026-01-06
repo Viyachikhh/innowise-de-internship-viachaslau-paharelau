@@ -12,10 +12,11 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     # Настройки подключения к Spark Master
     SPARK_MASTER: "spark://spark-master:7077"
-  volumes:
+  volumes: &common-volumes
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./scripts:/opt/airflow/scripts
+    - ./data:/opt/airflow/data
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
@@ -54,11 +55,7 @@ services:
       _AIRFLOW_WWW_USER_CREATE: 'true'
       _AIRFLOW_WWW_USER_USERNAME: airflow
       _AIRFLOW_WWW_USER_PASSWORD: airflow
-    volumes:
-    - ./dags:/opt/airflow/dags
-    - ./logs:/opt/airflow/logs
-    - ./scripts:/opt/airflow/scripts
-
+    volumes: *common-volumes
   # --- AIRFLOW WEBSERVER + SCHEDULER ---
   airflow-webserver:
     <<: *airflow-common
@@ -94,10 +91,7 @@ services:
     ports:
       - "8081:8080" # Spark UI
       - "7077:7077"
-    volumes:
-    - ./dags:/opt/airflow/dags
-    - ./logs:/opt/airflow/logs
-    - ./scripts:/opt/airflow/scripts
+    volumes: *common-volumes
 
   spark-worker:
     image: bitnamilegacy/spark:3.5.3
@@ -108,10 +102,7 @@ services:
       - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-2G}
     depends_on:
       - spark-master
-    volumes:
-    - ./dags:/opt/airflow/dags
-    - ./logs:/opt/airflow/logs
-    - ./scripts:/opt/airflow/scripts
+    volumes: *common-volumes
     # deploy:
     #  resources:
     #    limits:
