@@ -4,6 +4,7 @@ BUCKET_NAME="departure-info"
 LAMBDA_NAME="wait-csv-and-metrics"
 REGION="us-east-1"
 ACCOUNT_ID="000000000000"
+TOPIC=first-topic
 
 cd /etc/localstack/init/ready.d/lambda_func # Путь внутри контейнера к коду
 zip function.zip month_handler_info.py
@@ -19,13 +20,31 @@ awslocal lambda create-function \
 
 awslocal lambda wait function-active --function-name wait-csv-and-metrics
 
+awslocal sns create-topic --name first-topic
+
 # 4. Разрешаем S3 вызывать эту Ламбду (Permission)
+awslocal lambda add-permission \
+    --function-name $LAMBDA_NAME \
+    --statement-id s3-trigger-rule \
+    --action "lambda:InvokeFunction" \
+    --principal s3.amazonaws.com \
+    --source-arn arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$LAMBDA_NAME
+
+
+
 awslocal lambda add-permission \
     --function-name $LAMBDA_NAME \
     --statement-id s3-trigger \
     --action "lambda:InvokeFunction" \
     --principal s3.amazonaws.com \
-    --source-arn "arn:aws:s3:::$BUCKET_NAME"
+    --source-arn arn:aws:sns:$REGION:$ACCOUNT_ID:$TOPIC
+
+echo "arn:aws:sns:'$REGION':'$ACCOUNT_ID':'$TOPIC'"
+
+awslocal sns subscribe \
+    --topic-arn arn:aws:sns:$REGION:$ACCOUNT_ID:$TOPIC \
+    --protocol lambda \
+    --notification-endpoint arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$LAMBDA_NAME
 
 sleep 5 
 
