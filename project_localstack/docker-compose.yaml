@@ -5,18 +5,20 @@ x-airflow-common: &airflow-common
     - .env
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER_AIRFLOW}:${DB_PASSWORD_AIRFLOW}@postgres/${DB_NAME_AIRFLOW}
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER_AIRFLOW}:${DB_PASSWORD_AIRFLOW}@postgres/${DB_NAME_AIRFLOW}
+    AIRFLOW__CORE__FERNET_KEY: 'fernet_key'
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__SECRET_KEY: 'secret_key'
     # Настройки подключения к Spark Master
     SPARK_MASTER: "spark://spark-master:7077"
   volumes: &common-volumes
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./scripts:/opt/airflow/scripts
-    - ./data:/opt/airflow/data
+    - ./data/orig:${AIRFLOW_VAR_SOURCE_DATA_PATH}
+    - ./data/splits:${AIRFLOW_VAR_DESTINATION_DATA_PATH}
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
@@ -30,15 +32,19 @@ services:
     environment:
       - SERVICES=s3,lambda,sns,sqs,dynamo
     volumes:
-      - "./localstack_init:/etc/localstack/init/ready.d" # Если нужно создать бакет при старте
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./localstack_scripts_init/init.sh:/etc/localstack/init/ready.d/init.sh" # Если нужно создать бакет при старте
+      - "./localstack_scripts_init/lambda_check.sh:/etc/localstack/init/ready.d/lambda_check.sh" # Для 1-й лямбды, которая ждёт в бакете ждёт данные по месяцу и метрики
+      - "./lambda_func:/etc/localstack/init/ready.d/lambda_func" # Папка со скриптами для lambda 
 
   # --- POSTGRES (DB for Airflow) ---
   postgres:
     image: postgres:16
+    restart: always
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${DB_USER_AIRFLOW}
+      POSTGRES_PASSWORD: ${DB_PASSWORD_AIRFLOW}
+      POSTGRES_DB: ${DB_NAME_AIRFLOW}
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
@@ -53,13 +59,16 @@ services:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: airflow
-      _AIRFLOW_WWW_USER_PASSWORD: airflow
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD}
     volumes: *common-volumes
+    depends_on: *airflow-common-depends-on
   # --- AIRFLOW WEBSERVER + SCHEDULER ---
   airflow-webserver:
     <<: *airflow-common
     command: webserver
+    container_name: localstack-airflow-webserver
+    restart: always
     env_file: *airflow-common-envfile
     ports:
       - "8080:8080"
@@ -68,24 +77,47 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+    volumes:
+      - ./data:/opt/airflow/data
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-
 
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    container_name: localstack-airflow-scheduler
+    restart: always
     env_file: *airflow-common-envfile
+    volumes: *common-volumes
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+  
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    container_name: localstack-airflow-triggerer
+    volumes: *common-volumes
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
 
+
   # --- SPARK CLUSTER ---
   spark-master:
     image: bitnamilegacy/spark:3.5.3
+    container_name: localstack-spark-master
     environment:
       - SPARK_MODE=master
     ports:
@@ -95,6 +127,7 @@ services:
 
   spark-worker:
     image: bitnamilegacy/spark:3.5.3
+    container_name: localstack-spark-worker
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -103,10 +136,3 @@ services:
     depends_on:
       - spark-master
     volumes: *common-volumes
-    # deploy:
-    #  resources:
-    #    limits:
-          # Если в .env пусто, возьмет 0.50
-    #      cpus: '${WORKER_CPU_LIMIT:-0.50}'
-          # Если в .env пусто, возьмет 1G
-    #      memory: '${WORKER_MEM_LIMIT:-4G}'
