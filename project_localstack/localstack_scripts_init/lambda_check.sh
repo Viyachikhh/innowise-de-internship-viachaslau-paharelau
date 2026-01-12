@@ -31,15 +31,13 @@ awslocal lambda add-permission \
     --source-arn arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$LAMBDA_NAME
 
 
-
 awslocal lambda add-permission \
     --function-name $LAMBDA_NAME \
-    --statement-id s3-trigger \
+    --statement-id sns-trigger-rule \
     --action "lambda:InvokeFunction" \
-    --principal s3.amazonaws.com \
+    --principal sns.amazonaws.com \
     --source-arn arn:aws:sns:$REGION:$ACCOUNT_ID:$TOPIC
 
-echo "arn:aws:sns:'$REGION':'$ACCOUNT_ID':'$TOPIC'"
 
 awslocal sns subscribe \
     --topic-arn arn:aws:sns:$REGION:$ACCOUNT_ID:$TOPIC \

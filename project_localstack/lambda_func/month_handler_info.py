@@ -1,6 +1,7 @@
 import boto3
 import os
 import logging
+import json
 from botocore.exceptions import ClientError
 
 
@@ -18,8 +19,22 @@ s3 = boto3.client(
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
 def lambda_handler(event, context):
-    bucket_name = event['Records'][0]['s3']['bucket']['name']
-    uploaded_key = event['Records'][0]['s3']['object']['key']
+    try:
+        sns_message = event['Records'][0]['Sns']['Message']
+        s3_event = json.loads(sns_message)
+        
+        # Иногда S3 шлёт тестовые сообщения "s3:TestEvent", пропускаем их
+        if 'Event' in s3_event and s3_event['Event'] == 's3:TestEvent':
+            print("Skipping S3 Test Event")
+            return
+        
+        record = s3_event['Records'][0]
+        bucket_name = record['s3']['bucket']['name']
+        uploaded_key = record['s3']['object']['key'] # months/${MONTH_NAME}/metric.csv
+    
+    except (KeyError, json.JSONDecodeError) as e:
+        print(f"Error parsing event: {e}")
+        return
     
     logger.info(f"📂 Загружен файл: {uploaded_key}")
 

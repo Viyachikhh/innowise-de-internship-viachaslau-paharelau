@@ -30,7 +30,7 @@ joined = grouped_data_return.join(grouped_data_departure, (grouped_data_departur
 joined = joined.fillna(0).withColumn("name", joined["departure_name"])
 joined = joined.select(["name", "departure_name_count", "return_name_count"])
 
-joined.write.csv(f"s3a://departure-info/months/{args.month}/metrics.csv")
+joined.coalesce(1).write.mode("overwrite").option("header", "true").csv(f"s3a://departure-info/months/{args.month}/metrics.csv")
 
 spark.stop()
 

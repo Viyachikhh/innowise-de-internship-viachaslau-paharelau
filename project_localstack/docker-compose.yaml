@@ -31,6 +31,7 @@ services:
       - "4566:4566"
     environment:
       - SERVICES=s3,lambda,sns,sqs,dynamo
+      - DEBUG=1
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_scripts_init/init.sh:/etc/localstack/init/ready.d/init.sh" # Если нужно создать бакет при старте
