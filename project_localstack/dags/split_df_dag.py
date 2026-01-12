@@ -11,14 +11,13 @@ with DAG('dataframe_split', schedule_interval=None, catchup=False) as dag:
     def split(source_file: str, dest_path: str):
         df = pd.read_csv(source_file)
         df['departure'] = pd.to_datetime(df['departure'])
-        for month, sample in df.groupby(df.departure.dt.month):
-            csv_name = str(month) + '.csv'
-            print(dest_path + csv_name)
+        for month, sample in df.groupby(df.departure.dt.month_name()):
+            csv_name = '/' + month + '.csv'
             sample.to_csv(dest_path + csv_name, index=False)
 
-    main_path = Variable.get("data_path")
+    source_folder = Variable.get("source_data_path")
+    destination_folder = Variable.get("destination_data_path")
 
-    source_file = main_path + '/orig/' + 'database.csv'
-    dest_path = main_path + '/splitted/'
+    source_file = source_folder + '/database.csv'
 
-    split(source_file, main_path)
+    split(source_file, destination_folder)

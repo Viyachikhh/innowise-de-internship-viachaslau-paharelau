@@ -39,7 +39,7 @@ with DAG('spark_localstack_demo', default_args=default_args, schedule_interval=N
     # Мы используем пакеты org.apache.hadoop:hadoop-aws для работы с S3
     submit_job = SparkSubmitOperator(
         task_id='submit_spark_job',
-        application='/opt/airflow/scripts/job.py', # Путь внутри контейнера Airflow
+        application='/opt/airflow/scripts/test_job.py', # Путь внутри контейнера Airflow
         conn_id='spark_default', # По умолчанию смотрит на spark://spark-master:7077 (нужно настроить или передать conf)
         packages="org.apache.hadoop:hadoop-aws:3.3.4", # Пакеты для S3
         verbose=True
