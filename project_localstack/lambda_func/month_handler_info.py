@@ -1,51 +1,60 @@
-import boto3
-import os
-import logging
 import json
-from botocore.exceptions import ClientError
+import logging
+import urllib
 
+from my_utils.my_interface import LocalstackBotoInterface
+from my_utils.my_define_month import define_month_prefix
+from my_utils.my_put_data import spark_metric_logic, data_metric_logic
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-s3 = boto3.client(
-        's3',
-        endpoint_url=os.environ.get("AWS_ENDPOINT"),
-        aws_access_key_id=os.environ.get("AWS_KEY_ID"),
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS"),
-        region_name=os.environ.get("AWS_REGION")
-    )
 
-MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+localstack_comm = LocalstackBotoInterface()
 
 def lambda_handler(event, context):
-    try:
-        sns_message = event['Records'][0]['Sns']['Message']
-        s3_event = json.loads(sns_message)
-        
-        # Иногда S3 шлёт тестовые сообщения "s3:TestEvent", пропускаем их
-        if 'Event' in s3_event and s3_event['Event'] == 's3:TestEvent':
-            print("Skipping S3 Test Event")
-            return
-        
-        record = s3_event['Records'][0]
-        bucket_name = record['s3']['bucket']['name']
-        uploaded_key = record['s3']['object']['key'] # months/${MONTH_NAME}/metric.csv
-    
-    except (KeyError, json.JSONDecodeError) as e:
-        print(f"Error parsing event: {e}")
-        return
-    
-    logger.info(f"📂 Загружен файл: {uploaded_key}")
+    for record in event['Records']:
 
-    at_least_one = any([month + '/metric.csv' in uploaded_key for month in MONTHS])
-    if not at_least_one:
-        logger.info("File is absent. Ignore")
-        return
-    else:
-        current_month = None
-        for month in MONTHS:
-            if month + '/metric.csv' in uploaded_key:
-                current_month = month
-                logger.info(f"OUR MONTH INFO IS - {bucket_name}, {current_month}, {uploaded_key}")
-                return {"status": "success", "processed_file": current_month}
+        if 'Sns' not in record.keys():
+            continue
+
+        sns_message_raw = record['Sns']['Message']
+        
+        try:
+            s3_event = json.loads(sns_message_raw)
+            if 'Records' in s3_event.keys():
+                # 3. Проходим по записям S3 внутри сообщения SNS
+                for s3_record in s3_event['Records']:
+
+                    eventName = s3_record.get('eventName', '')
+                    if not eventName.startswith('ObjectCreated'):
+                        continue
+                    
+                    bucket_name = s3_record['s3']['bucket']['name']
+                    raw_key = s3_record['s3']['object']['key']
+                    file_key = urllib.parse.unquote_plus(raw_key)
+                    
+                    current_month = define_month_prefix(file_key)
+                    if current_month is None:
+                        continue
+                    
+                    # Отбор записей /data.csv из DAG Airflow
+                    if file_key.endswith(f"{current_month}/data.csv"):
+                        data_metric_logic(localstack_comm, bucket_name, file_key)
+                    # Отбор записей /count_metrics из Spark
+                    elif f'{current_month}/count_metrics/part-' in file_key and file_key.endswith('.csv'):
+                        spark_metric_logic(localstack_comm, bucket_name, file_key)
+                    # Остальные пока нас не интересуют, поэтому пропускаем
+                    else:
+                        continue
+            else:
+                logger.info("Сообщение SNS не содержит записей S3 (возможно, тестовое сообщение).")
+                logger.info(f"Raw Message: {sns_message_raw}")
+
+        except json.JSONDecodeError:
+            logger.info("Ошибка парсинга JSON из сообщения SNS")
+            
+    return {
+        'statusCode': 200,
+        'body': json.dumps('File info processed')
+    }

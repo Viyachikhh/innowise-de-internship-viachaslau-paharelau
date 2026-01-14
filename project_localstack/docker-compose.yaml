@@ -1,13 +1,15 @@
 x-airflow-common: &airflow-common
-  build: .
-  user: ${AIRFLOW_UID:-1000}
+  build: 
+    context: ./docker-scripts/airflow
+    dockerfile: Dockerfile
+  user: "${AIRFLOW_UID:-1000}:0"
   env_file: &airflow-common-envfile
     - .env
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER_AIRFLOW}:${DB_PASSWORD_AIRFLOW}@postgres/${DB_NAME_AIRFLOW}
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER_AIRFLOW}:${DB_PASSWORD_AIRFLOW}@postgres/${DB_NAME_AIRFLOW}
-    AIRFLOW__CORE__FERNET_KEY: 'fernet_key'
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__WEBSERVER__SECRET_KEY: 'secret_key'
@@ -26,17 +28,19 @@ x-airflow-common: &airflow-common
 services:
   # --- LOCALSTACK (AWS Emulator) ---
   localstack:
+    user: root
+    privileged: true
     image: localstack/localstack
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=s3,lambda,sns,sqs,dynamo
+      - SERVICES=s3,lambda,sns,sqs,dynamodb
       - DEBUG=1
+      - LAMBDA_EXECUTOR=docker
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_scripts_init/init.sh:/etc/localstack/init/ready.d/init.sh" # Если нужно создать бакет при старте
-      - "./localstack_scripts_init/lambda_check.sh:/etc/localstack/init/ready.d/lambda_check.sh" # Для 1-й лямбды, которая ждёт в бакете ждёт данные по месяцу и метрики
-      - "./lambda_func:/etc/localstack/init/ready.d/lambda_func" # Папка со скриптами для lambda 
+      - "./lambda_func:/tmp/lambda_func" # Папка со скриптами для lambda 
 
   # --- POSTGRES (DB for Airflow) ---
   postgres:
@@ -117,7 +121,9 @@ services:
 
   # --- SPARK CLUSTER ---
   spark-master:
-    image: bitnamilegacy/spark:3.5.3
+    build: 
+      context: ./docker-scripts/spark
+      dockerfile: Dockerfile
     container_name: localstack-spark-master
     environment:
       - SPARK_MODE=master
@@ -127,13 +133,15 @@ services:
     volumes: *common-volumes
 
   spark-worker:
-    image: bitnamilegacy/spark:3.5.3
+    build: 
+      context: ./docker-scripts/spark
+      dockerfile: Dockerfile
     container_name: localstack-spark-worker
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-1}
-      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-2G}
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-2}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-4G}
     depends_on:
       - spark-master
     volumes: *common-volumes
