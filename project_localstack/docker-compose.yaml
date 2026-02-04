@@ -6,15 +6,14 @@ x-airflow-common: &airflow-common
   env_file: &airflow-common-envfile
     - .env
   environment: &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER_AIRFLOW}:${DB_PASSWORD_AIRFLOW}@postgres/${DB_NAME_AIRFLOW}
-    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER_AIRFLOW}:${DB_PASSWORD_AIRFLOW}@postgres/${DB_NAME_AIRFLOW}
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: ${AIRFLOW__CORE__SQL_ALCHEMY_CONN}
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__WEBSERVER__SECRET_KEY: 'secret_key'
-    # Настройки подключения к Spark Master
-    SPARK_MASTER: "spark://spark-master:7077"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: ${AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION}
+    AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+    SPARK_MASTER: ${SPARK_MASTER_URL}
   volumes: &common-volumes
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
@@ -35,7 +34,6 @@ services:
       - "4566:4566"
     environment:
       - SERVICES=s3,lambda,sns,sqs,dynamodb
-      - DEBUG=1
       - LAMBDA_EXECUTOR=docker
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
@@ -124,7 +122,7 @@ services:
     build: 
       context: ./docker-scripts/spark
       dockerfile: Dockerfile
-    container_name: localstack-spark-master
+    # container_name: localstack-spark-master
     environment:
       - SPARK_MODE=master
     ports:
@@ -136,12 +134,31 @@ services:
     build: 
       context: ./docker-scripts/spark
       dockerfile: Dockerfile
-    container_name: localstack-spark-worker
+    # container_name: localstack-spark-worker
     environment:
       - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-2}
-      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-4G}
+      - SPARK_MASTER_URL=${SPARK_MASTER_URL}
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-1}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-1G}
     depends_on:
       - spark-master
     volumes: *common-volumes
+
+  livy:
+    build:
+      context: ./docker-scripts/livy
+      dockerfile: Dockerfile
+    container_name: localstack-livy
+    environment:
+      - SPARK_MASTER_ENDPOINT=${SPARK_MASTER_URL}
+      - LIVY_SPARK_MASTER=${SPARK_MASTER_URL}
+      - LIVY_SPARK_DEPLOY_MODE=client
+      - "SPARK_SUBMIT_OPTIONS=--conf spark.driver.host=livy"
+      - SPARK_CONF_DIR=/opt/bitnami/spark/conf
+    ports:
+      - "8998:8998"
+    depends_on:
+      - spark-master
+      - spark-worker
+    volumes:
+      - ./scripts/:/opt/livy/scripts

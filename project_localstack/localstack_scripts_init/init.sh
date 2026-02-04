@@ -1,21 +1,30 @@
 #!/bin/bash
 
+# Базовые переменные
 BUCKET_NAME=departure-info
+# Lambda
 LAMBDA_NAME=wait-csv-and-metrics
+LAMBDA_TIMEOUT=65
+# SQS
+QUEUE_NAME=delay-queue
+DELAY_SECONDS=25
+VISIBILITY_TIMEOUT=75
+# Common
 REGION=us-east-1
 ACCOUNT_ID=000000000000
+# SNS
 TOPIC=spark-topic
 
+# Служебные
 LAMBDA_ARN=arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$LAMBDA_NAME
 SNS_ARN=arn:aws:sns:$REGION:$ACCOUNT_ID:$TOPIC
+QUEUE_ARN=arn:aws:sqs:$REGION:$ACCOUNT_ID:$QUEUE_NAME
 ROLE=arn:aws:iam::$ACCOUNT_ID:role/lambda-role
 
-# Создание бакета
-echo "Создаю S3 бакет: departure-info"
+echo "Создаю S3 бакет:\n"
 awslocal s3 mb s3://departure-info
 
-
-# Таблицы dynamodb
+echo "Создаю таблиц:\n"
 awslocal dynamodb create-table \
     --table-name MonthlyMetrics \
     --attribute-definitions \
@@ -45,17 +54,17 @@ awslocal dynamodb create-table \
 awslocal dynamodb create-table \
     --table-name CountMetrics \
     --attribute-definitions \
-        AttributeName=index,AttributeType=N \
+        AttributeName=month,AttributeType=N \
         AttributeName=name,AttributeType=S \
     --key-schema \
         AttributeName=name,KeyType=HASH \
-        AttributeName=index,KeyType=RANGE \
+        AttributeName=month,KeyType=RANGE \
     --provisioned-throughput \
         ReadCapacityUnits=5,WriteCapacityUnits=5 \
     --table-class STANDARD
 
-# Устанавливаем зависимости и всё пакуем
-cd /tmp/lambda_func # Путь внутри контейнера к коду
+echo 'Создание и сборка Lambda:\n'
+cd /tmp/lambda_func 
 
 pip install \
     --platform manylinux2014_x86_64 \
@@ -69,23 +78,22 @@ pip install \
 cd lib_packages
 
 chmod -R 755 .
-zip -r9 ../../handler.zip .
+zip -r9q ../../handler.zip .
 cd ..
-zip -r -g ../handler.zip my_utils
+zip -rgq ../handler.zip my_utils
 zip -g ../handler.zip month_handler_info.py
 
-# Создаем Lambda функцию
 awslocal lambda create-function \
     --function-name $LAMBDA_NAME \
     --runtime python3.12 \
-    --timeout 10 \
+    --timeout 60 \
     --handler month_handler_info.lambda_handler \
     --role $ROLE \
     --zip-file fileb:///tmp/handler.zip
 
 awslocal lambda wait function-active --function-name $LAMBDA_NAME
 
-# Даём права S3
+echo "Настройка прав S3 для лямбды:\n"
 awslocal lambda add-permission \
     --function-name $LAMBDA_NAME \
     --statement-id s3-trigger-rule \
@@ -93,24 +101,29 @@ awslocal lambda add-permission \
     --principal s3.amazonaws.com \
     --source-arn $LAMBDA_ARN
 
-# Настройка Sns
+echo "Создание SNS:\n"
 awslocal sns create-topic --name $TOPIC
 
-# Даём права Sns
-awslocal lambda add-permission \
-    --function-name $LAMBDA_NAME \
-    --statement-id sns-trigger-rule \
-    --action "lambda:InvokeFunction" \
-    --principal sns.amazonaws.com \
-    --source-arn $SNS_ARN
+echo "Создание SQS с задержкой:\n"
+awslocal sqs create-queue \
+    --queue-name $QUEUE_NAME \
+    --attributes DelaySeconds=$DELAY_SECONDS,VisibilityTimeout=$VISIBILITY_TIMEOUT
 
-# Соединяем Sns с Lambda-функцией
+echo "Создание ARN очереди:\n"
+QUEUE_URL=$(awslocal sqs get-queue-url --queue-name $QUEUE_NAME --query 'QueueUrl' --output text)
+
+echo "Подписываем SQS на SNS:\n"
 awslocal sns subscribe \
     --topic-arn $SNS_ARN \
-    --protocol lambda \
-    --notification-endpoint $LAMBDA_ARN
+    --protocol sqs \
+    --notification-endpoint $QUEUE_ARN
 
-echo "LOLOLOLOLFKBJAVFJFAJJFAJAFJFAJ"
+echo "Настраиваем триггер Lambda <- SQS..."
+awslocal lambda create-event-source-mapping \
+    --function-name $LAMBDA_NAME \
+    --event-source-arn $QUEUE_ARN \
+    --batch-size 1
+
 # Делаем так, что тригерилось только на файл metrics.csv(Он создаётся в конце выполнения DAG загрузки в бакет)
 awslocal s3api put-bucket-notification-configuration \
     --bucket $BUCKET_NAME \

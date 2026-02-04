@@ -2,6 +2,9 @@ import os
 import boto3
 
 class LocalstackBotoInterface:
+    """
+    Интерфейс, что собирает в себе boto3 фичи
+    """
 
     def __init__(self):
         self.dict_args = {"endpoint_url":os.environ.get("AWS_ENDPOINT"),

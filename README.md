@@ -4,9 +4,6 @@ Intern: Viachaslau Paharelau
 
 ## Project: LocalStack
 
----
-
-### Info
 
 Запуск проекта:<br>
 
@@ -16,7 +13,7 @@ Intern: Viachaslau Paharelau
 
 ```
 <br>
-** Примечание: с учётом InferSchema и механизмом чтения данных в Spark, макс. кол-во может являться не самым оптимальным параметром
+* Примечание: с учётом InferSchema и механизмом чтения данных в Spark, макс. кол-во может являться не самым оптимальным параметром
 
 ---
 
@@ -27,3 +24,7 @@ Intern: Viachaslau Paharelau
 4) localstack_scripts_init - скрипт, который инициализирует бакет, DynamoDB-таблицы и Lambda-функцию
 5) logs - папка для логов Airflow
 6) scripts - папка для Spark-скриптов
+7) data - папка с csv (orig - большая csv, splits - маленькие разделённые по месяцам - из неё и работают DAGs)
+
+---
+

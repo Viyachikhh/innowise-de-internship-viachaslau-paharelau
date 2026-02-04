@@ -1,7 +1,4 @@
-# dynamodb, spark, airflow
 pandas
-pyspark==3.5.3
-boto3
-apache-airflow-providers-apache-spark
+apache-airflow-providers-apache-livy
 apache-airflow-providers-amazon
 
