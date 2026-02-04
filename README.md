@@ -1,6 +1,6 @@
 # BIG DATA INTERNSHIP
 
-Intern: Viachaslau Paharelau
+Trainee: Viachaslau Paharelau
 
 ## Project: LocalStack
 
