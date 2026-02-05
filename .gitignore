@@ -1,0 +1,9 @@
+.venv
+*.ipynb_c*
+*.csv
+*__pycache__
+.env
+*/logs/*
+project_localstack/lambda_func/lib_packages/*
+!*.gitkeep
+*handler.zip
