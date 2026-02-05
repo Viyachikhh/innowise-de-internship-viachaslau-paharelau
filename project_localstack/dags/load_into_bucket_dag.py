@@ -30,10 +30,10 @@ with DAG('communication_with_localstack', start_date=datetime(2026, 1, 1),schedu
         """
         hook = S3Hook(aws_conn_id='aws_localstack_default')
         
-        month = csv_name.split('/')[-1].split('.')[0]
-        dest_inside_bucket = "months" + f'/{month}' + '/data.csv'
+        period = csv_name.split('/')[-1].split('.')[0]
+        dest_inside_bucket = "periods" + f'/{period}' + '/data.csv'
         hook.load_file(filename=csv_name, key=dest_inside_bucket, bucket_name=os.environ.get("BUCKET_NAME"))
-        return month
+        return period
     
     @task(task_id="construct_spark_dynamic_args")
     def construct_args(name: str):
@@ -44,11 +44,11 @@ with DAG('communication_with_localstack', start_date=datetime(2026, 1, 1),schedu
         :param name: Имя csv файла
         :type name: str
         """
-        month_numbers = {"January": 1, "February": 2, "March": 3, "April": 4,
-                         "May": 5, "June": 6, "July": 7, "August": 8,
-                         "September": 9, "October": 10, "November": 11, "December": 12}
-
-        return ['--month', name, '--number', month_numbers[name]]
+        info = name.split('-')
+        dif_year = int(info[0]) - 1990 + 1 
+        month = int(info[1])
+        id = dif_year * 100 + month
+        return ['--period', name, '--id', id]
 
     files = parse_csv()
     appending_many = append_into_bucket.expand(csv_name=files)
