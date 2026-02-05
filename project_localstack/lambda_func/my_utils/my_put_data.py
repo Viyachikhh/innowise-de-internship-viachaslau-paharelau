@@ -22,37 +22,46 @@ def data_metric_logic(interface: LocalstackBotoInterface, bucket:str, key:str):
     """
     obj = interface.get_s3_client.get_object(Bucket=bucket, Key=key)
     data = obj['Body'].read()
-    df = pd.read_csv(io.BytesIO(data), low_memory=False)
+    chunks = pd.read_csv(io.BytesIO(data), chunksize=10000, low_memory=False)
 
-    df['departure'] = pd.to_datetime(df['departure'])
+    for chunk in chunks:
+        chunk['departure'] = pd.to_datetime(chunk['departure'])
 
-    # Расчёт ежедневных метрик
-    df_daily_metrics = df.groupby(df.departure.dt.day).agg({"distance (m)":"mean", 
-                                "duration (sec.)":"mean", 
-                                "avg_speed (km/h)":"mean", 
-                                "Air temperature (degC)":"mean"}).reset_index().rename(columns={"distance (m)":"AvgDistance", 
-                                                                                "duration (sec.)":"AvgDuration", 
-                                                                                "avg_speed (km/h)":"AvgSpeed", 
-                                                                                "Air temperature (degC)":"AvgTemperature",
-                                                                                "departure": "DayNum"})
-    
-    df_daily_metrics['Month'] = df.departure.dt.month_name().tolist()[0]
-    df_daily_metrics = df_daily_metrics[['Month', 'DayNum', 'AvgDistance', 'AvgDuration', 'AvgSpeed', 'AvgTemperature']]
-    
-    daily_items = json.loads(df_daily_metrics.reset_index().to_json(orient='records'), parse_float=Decimal)
-    daily_items = [{k: v for k, v in item.items() if k != 'index'} for item in daily_items]
-    
-    # Расчёт ежемесячных (будет одна строка, т.к. у нас изначально идёт группировка по месяцам)
-    df_monthly_metrics = df.groupby(df.departure.dt.month_name()).agg({"distance (m)":"mean", 
-                                "duration (sec.)":"mean", 
-                                "avg_speed (km/h)":"mean", 
-                                "Air temperature (degC)":"mean"}).reset_index().rename(columns={"distance (m)":"AvgDistance", 
-                                                                                "duration (sec.)":"AvgDuration", 
-                                                                                "avg_speed (km/h)":"AvgSpeed", 
-                                                                                "Air temperature (degC)":"AvgTemperature",
-                                                                                "departure": "Month"})
-    monthly_item = json.loads(df_monthly_metrics.reset_index().to_json(orient='records'), parse_float=Decimal)
-    monthly_item[0]['index'] = df.departure.dt.month.tolist()[0]
+        period = chunk['departure'].dt.to_period('M').unique().tolist()[0]
+
+        chunk_metrics = chunk.groupby(chunk.departure.dt.day).agg(sum_duration=('duration (sec.)', 'sum'),
+                                                                count_duration=('duration (sec.)', 'count'),
+                                                                sum_distance=('distance (m)', 'sum'),
+                                                                count_distance=('distance (m)', 'count'),
+                                                                sum_speed=('avg_speed (km/h)', 'sum'),
+                                                                count_speed=('avg_speed (km/h)', 'count'),
+                                                                sum_temperature=('Air temperature (degC)', 'sum'),
+                                                                count_temperature=('Air temperature (degC)', 'count'))
+        if 'full_df' not in locals():
+            full_df = chunk_metrics
+        else:
+            full_df = full_df.add(chunk_metrics, fill_value=0)
+
+    # Расчёт полных метрик для DailyMetrics
+    full_df['AvgDuration'] = full_df['sum_duration'] / full_df['count_duration']
+    full_df['AvgDistance'] = full_df['sum_distance'] / full_df['count_distance']
+    full_df['AvgSpeed'] = full_df['sum_speed'] / full_df['count_speed']
+    full_df['AvgTemperature'] = full_df['sum_temperature'] / full_df['count_temperature']
+
+    # Выделение отдельного датафрейма
+    daily_df = full_df[['AvgDuration', 'AvgDistance', 'AvgSpeed', 'AvgTemperature']]
+    daily_df['Period'] = str(period)
+    daily_df.index.names = ['DayNum']
+
+    # Для корректной конвертации данных
+    convert = lambda x: Decimal(str(x))
+    # Данные в json
+    daily_info = json.loads(daily_df.reset_index().to_json(orient='records'), parse_float=Decimal)
+    month_info = [{'Period': str(period), 
+                'AvgDuration': convert(full_df['sum_duration'].sum() / full_df['count_duration'].sum()), 
+                'AvgDistance': convert(full_df['sum_distance'].sum() / full_df['count_distance'].sum()), 
+                'AvgSpeed': convert(full_df['sum_speed'].sum() / full_df['count_speed'].sum()), 
+                'AvgTemperature': convert(full_df['sum_temperature'].sum() / full_df['count_temperature'].sum())}]
     
     # Вызов таблиц
     table_daily = interface.get_dynamo_resource.Table("DailyMetrics")
@@ -60,11 +69,11 @@ def data_metric_logic(interface: LocalstackBotoInterface, bucket:str, key:str):
 
     # Помещаем данные
     with table_daily.batch_writer() as batch:
-        for item in daily_items:
+        for item in daily_info:
             batch.put_item(Item=item)
 
     with table_monthly.batch_writer() as batch:
-        for item in monthly_item:
+        for item in month_info:
             batch.put_item(Item=item)
     
     

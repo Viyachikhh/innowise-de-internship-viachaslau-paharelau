@@ -4,11 +4,11 @@
 BUCKET_NAME=departure-info
 # Lambda
 LAMBDA_NAME=wait-csv-and-metrics
-LAMBDA_TIMEOUT=65
+LAMBDA_TIMEOUT=900
 # SQS
 QUEUE_NAME=delay-queue
 DELAY_SECONDS=25
-VISIBILITY_TIMEOUT=75
+VISIBILITY_TIMEOUT=920
 # Common
 REGION=us-east-1
 ACCOUNT_ID=000000000000
@@ -21,18 +21,16 @@ SNS_ARN=arn:aws:sns:$REGION:$ACCOUNT_ID:$TOPIC
 QUEUE_ARN=arn:aws:sqs:$REGION:$ACCOUNT_ID:$QUEUE_NAME
 ROLE=arn:aws:iam::$ACCOUNT_ID:role/lambda-role
 
-echo "Создаю S3 бакет:\n"
+echo "Создаю S3 бакет: \n"
 awslocal s3 mb s3://departure-info
 
-echo "Создаю таблиц:\n"
+echo "Создаю таблицы: \n"
 awslocal dynamodb create-table \
     --table-name MonthlyMetrics \
     --attribute-definitions \
-        AttributeName=index,AttributeType=N \
-        AttributeName=Month,AttributeType=S \
+        AttributeName=Period,AttributeType=S \
     --key-schema \
-        AttributeName=Month,KeyType=HASH \
-        AttributeName=index,KeyType=RANGE \
+        AttributeName=Period,KeyType=HASH \
     --provisioned-throughput \
         ReadCapacityUnits=5,WriteCapacityUnits=5 \
     --table-class STANDARD
@@ -41,10 +39,10 @@ awslocal dynamodb create-table \
 awslocal dynamodb create-table \
     --table-name DailyMetrics \
     --attribute-definitions \
-        AttributeName=Month,AttributeType=S \
+        AttributeName=Period,AttributeType=S \
         AttributeName=DayNum,AttributeType=N \
     --key-schema \
-        AttributeName=Month,KeyType=HASH \
+        AttributeName=Period,KeyType=HASH \
         AttributeName=DayNum,KeyType=RANGE \
     --provisioned-throughput \
         ReadCapacityUnits=5,WriteCapacityUnits=5 \
@@ -54,39 +52,39 @@ awslocal dynamodb create-table \
 awslocal dynamodb create-table \
     --table-name CountMetrics \
     --attribute-definitions \
-        AttributeName=month,AttributeType=N \
-        AttributeName=name,AttributeType=S \
+        AttributeName=UnNum,AttributeType=N \
+        AttributeName=Name,AttributeType=S \
     --key-schema \
-        AttributeName=name,KeyType=HASH \
-        AttributeName=month,KeyType=RANGE \
+        AttributeName=Name,KeyType=HASH \
+        AttributeName=UnNum,KeyType=RANGE \
     --provisioned-throughput \
         ReadCapacityUnits=5,WriteCapacityUnits=5 \
     --table-class STANDARD
 
 echo 'Создание и сборка Lambda:\n'
-cd /tmp/lambda_func 
+rm -rf /tmp/lambda_build
+mkdir -p /tmp/lambda_build
+cp /tmp/lambda_func/requirements.txt /tmp/lambda_build/
 
 pip install \
     --platform manylinux2014_x86_64 \
     --implementation cp \
     --python-version 3.12 \
     --only-binary=:all: \
-    --target . \
-    --upgrade \
-    -r requirements.txt -t ./lib_packages
+    --target /tmp/lambda_build \
+    --no-cache-dir -r /tmp/lambda_build/requirements.txt
 
-cd lib_packages
+cp -r /tmp/lambda_func/my_utils /tmp/lambda_build/
+cp /tmp/lambda_func/month_handler_info.py /tmp/lambda_build/
 
+cd /tmp/lambda_build
 chmod -R 755 .
-zip -r9q ../../handler.zip .
-cd ..
-zip -rgq ../handler.zip my_utils
-zip -g ../handler.zip month_handler_info.py
+zip -r9q /tmp/handler.zip .
 
 awslocal lambda create-function \
     --function-name $LAMBDA_NAME \
     --runtime python3.12 \
-    --timeout 60 \
+    --timeout $LAMBDA_TIMEOUT \
     --handler month_handler_info.lambda_handler \
     --role $ROLE \
     --zip-file fileb:///tmp/handler.zip

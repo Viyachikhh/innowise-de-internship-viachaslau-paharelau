@@ -1,9 +1,10 @@
 import json
 import logging
 import urllib
+import re
 
 from my_utils.my_interface import LocalstackBotoInterface
-from my_utils.my_define_month import define_month_prefix
+from my_utils.my_define_month import define_period_prefix
 from my_utils.my_put_data import spark_metric_logic, data_metric_logic
 
 logger = logging.getLogger()
@@ -11,6 +12,7 @@ logger.setLevel(logging.INFO)
 
 
 localstack_comm = LocalstackBotoInterface()
+regexpr = re.compile(r'periods/\d{4}-\d{2}')
 
 def lambda_handler(event, context):
     """
@@ -34,16 +36,14 @@ def lambda_handler(event, context):
                     raw_key = s3_record['s3']['object']['key']
                     file_key = urllib.parse.unquote_plus(raw_key)
                     
-                    current_month = define_month_prefix(file_key)
-                    if current_month is None:
+                    current_prefix = define_period_prefix(file_key, regexpr)
+                    if current_prefix is None:
                         continue
                     # Отбор записей /data.csv из DAG Airflow
-                    if file_key.endswith(f"{current_month}/data.csv"):
-                        logger.info(f" \n\n\n\n ПОШЛА ОБРАБОТКА {current_month}/data.csv \n\n\n\n")
+                    if file_key.endswith(f"{current_prefix}/data.csv"):
                         data_metric_logic(localstack_comm, bucket_name, file_key)
                     # Отбор записей /count_metrics из Spark
-                    elif f'{current_month}/count_metrics/part-' in file_key and file_key.endswith('.csv'):
-                        logger.info(f" \n\n\n\n ПОШЛА ОБРАБОТКА {file_key} \n\n\n\n")
+                    elif f'{current_prefix}/count_metrics/part-' in file_key and file_key.endswith('.csv'):
                         spark_metric_logic(localstack_comm, bucket_name, file_key)
                     # Остальные пока нас не интересуют, поэтому пропускаем
                     else:

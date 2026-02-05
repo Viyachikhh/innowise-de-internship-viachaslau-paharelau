@@ -20,6 +20,7 @@ x-airflow-common: &airflow-common
     - ./scripts:/opt/airflow/scripts
     - ./data/orig:${AIRFLOW_VAR_SOURCE_DATA_PATH}
     - ./data/splits:${AIRFLOW_VAR_DESTINATION_DATA_PATH}
+    - ./data/exports:${AIRFLOW_VAR_EXPORTS_DATA_PATH}
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
@@ -35,6 +36,7 @@ services:
     environment:
       - SERVICES=s3,lambda,sns,sqs,dynamodb
       - LAMBDA_EXECUTOR=docker
+      - DEBUG=1
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_scripts_init/init.sh:/etc/localstack/init/ready.d/init.sh" # Если нужно создать бакет при старте
