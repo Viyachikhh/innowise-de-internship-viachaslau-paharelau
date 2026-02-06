@@ -9,7 +9,10 @@ from src.log_aggregator import LogAggregator
 from src.moving_data import move_data
 
 
-def tracking(csv_names: Iterable[str], source_path: str ='/logs/source', tracked_path: str ='/logs/tracked'):
+def tracking(csv_names: Iterable[str], 
+             source_path: str ='/logs/source', 
+             tracked_path: str ='/logs/tracked',
+             output_error_path: str = 'logs/error_list'):
 
     # Получение csv
     dfs = [preparation(reading(f'{source_path}/{name}')) for name in csv_names]
@@ -21,7 +24,7 @@ def tracking(csv_names: Iterable[str], source_path: str ='/logs/source', tracked
     # Перемещение проверенных csv
     move_data(csv_names, source_path, tracked_path)
     # Сохраняем в json
-    with open(f"/logs/error_list/example.json", "a+") as ouptut:
+    with open(f"{output_error_path}/example.json", "a+") as ouptut:
         json.dump(error_list, ouptut, indent=4)
     
 
