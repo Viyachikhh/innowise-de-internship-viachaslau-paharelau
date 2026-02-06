@@ -3,7 +3,7 @@ services:
     build: .
     volumes:
       - ./src:/src
-      - ./data:/logs
+      - ./logs:/logs
       - ./main.py:/main.py
     command: python main.py
        
