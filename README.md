@@ -13,7 +13,7 @@ Trainee: Viachaslau Paharelau
     docker compose up -d
 
 ```
-
+---
 ### Структура
 ---
 1) src - папка с модулем для обработки
@@ -21,7 +21,7 @@ Trainee: Viachaslau Paharelau
 3) Dockerfile, docker-compose.yaml, requirements - файлы для Docker
 4) logs - папка для логов, откуда читать (и куда кидать уже обработанные)
 
-
+---
 ### Как работает
 ---
 1) При запуске контейнер читает csv-файлы из logs/source
