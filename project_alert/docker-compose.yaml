@@ -1,10 +1,11 @@
 services:
   application:
     build: .
+    working_dir: /app
     volumes:
-      - ./src:/src
-      - ./logs:/logs
-      - ./main.py:/main.py
+      - ./src:/app/src
+      - ./logs:/app/logs
+      - ./main.py:/app/main.py
     command: python main.py
        
 

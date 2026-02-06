@@ -1,5 +1,7 @@
+import shutil
 from pathlib import Path
 from typing import Iterable
+
 
 def move_data(csv_names: Iterable[str], source_path: str, tracked_path: str) -> None:
     """
@@ -13,7 +15,7 @@ def move_data(csv_names: Iterable[str], source_path: str, tracked_path: str) -> 
     :type destination_path: str
     """
     for file in csv_names:
-        source = Path(source_path) / file
-        target = Path(tracked_path) / file 
+        source = f'{source_path}/{file}'
+        target = f'{tracked_path}/{file}' 
         
-        source.rename(target)
+        shutil.move(source, target)

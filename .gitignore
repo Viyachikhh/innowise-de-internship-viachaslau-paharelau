@@ -7,3 +7,5 @@
 project_localstack/lambda_func/lib_packages/*
 !*.gitkeep
 *handler.zip
+
+*.build_marker

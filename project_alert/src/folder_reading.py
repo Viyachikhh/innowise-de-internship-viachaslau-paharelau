@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def check_filex_exists(source_path: str = '/logs/source', tracked_path: str = '/logs/tracked'):
+def check_filex_exists(source_path: str = 'logs/source', tracked_path: str = 'logs/tracked'):
     """
     Docstring for read_folder
 
