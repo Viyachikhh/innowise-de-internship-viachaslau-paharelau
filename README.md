@@ -7,12 +7,18 @@ Trainee: Viachaslau Paharelau
 
 ### Запуск проекта
 ---
-
+1) Через Docker-compose:
 ```bash
     cd project_alert/
     docker compose up -d
 
 ```
+2) Через kubernetes(для локальной проверки kubernetes - использовать локально установленный minikube):
+```bash
+    make # подождать 2 минуты, т.к. pod перезапускается каждые две минуты
+    make test-run # если хотите тестовый раз запустить
+```
+   
 ---
 ### Структура
 ---
@@ -20,6 +26,7 @@ Trainee: Viachaslau Paharelau
 2) main.py - точка запуска контейнера
 3) Dockerfile, docker-compose.yaml, requirements - файлы для Docker
 4) logs - папка для логов, откуда читать (и куда кидать уже обработанные)
+5) kuber-manifests - папка для kubernetes-манифестов
 
 ---
 ### Как работает
