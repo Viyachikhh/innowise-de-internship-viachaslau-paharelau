@@ -6,7 +6,7 @@ from src.log_aggregator import LogAggregator
 
 
 def main():
-    folder_elements = list(Path("logs").rglob("*.csv"))
+    folder_elements = list(Path("logs/source/").rglob("*.csv"))
     folder_elements = [str(path) for path in folder_elements]
 
     names = [path.split('/')[-1] for path in folder_elements]
