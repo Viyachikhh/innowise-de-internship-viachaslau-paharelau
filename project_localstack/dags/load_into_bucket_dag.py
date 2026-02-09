@@ -44,11 +44,7 @@ with DAG('communication_with_localstack', start_date=datetime(2026, 1, 1),schedu
         :param name: Имя csv файла
         :type name: str
         """
-        info = name.split('-')
-        dif_year = int(info[0]) - 1990 + 1 
-        month = int(info[1])
-        id = dif_year * 100 + month
-        return ['--period', name, '--id', id]
+        return ['--period', name]
 
     files = parse_csv()
     appending_many = append_into_bucket.expand(csv_name=files)

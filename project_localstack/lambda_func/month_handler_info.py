@@ -4,7 +4,7 @@ import urllib
 import re
 
 from my_utils.my_interface import LocalstackBotoInterface
-from my_utils.my_define_month import define_period_prefix
+from my_utils.my_define_month import define_month_prefix
 from my_utils.my_put_data import spark_metric_logic, data_metric_logic
 
 logger = logging.getLogger()
@@ -36,7 +36,7 @@ def lambda_handler(event, context):
                     raw_key = s3_record['s3']['object']['key']
                     file_key = urllib.parse.unquote_plus(raw_key)
                     
-                    current_prefix = define_period_prefix(file_key, regexpr)
+                    current_prefix = define_month_prefix(file_key)
                     if current_prefix is None:
                         continue
                     # Отбор записей /data.csv из DAG Airflow
