@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: python-check-logs # имя нашего CronJob в кластере
+spec:
+  schedule: "*/2 * * * *" # каждые две минуты
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: alert-container
+            image: alert:v1  # имя образа
+            workingDir: /app
+            imagePullPolicy: Never # чтобы не качали из интернета
+            command: ["python"] 
+            args: ["/app/main.py"] # запуск скрипта
+            volumeMounts:
+            - name: alert-local
+              mountPath: /app # Путь внутри контейнера
+            envFrom: # загрузка секретов и переменных среды (никаких секретов нет, просто для примера)
+              - configMapRef:
+                  name: app-settings
+              - secretRef:
+                  name: app-secrets  
+          volumes:
+          - name: alert-local
+            hostPath:
+              path: /alert # Путь, который мы указали в minikube mount
+              type: Directory
+          restartPolicy: OnFailure # перезапуск, если была ошибка
