@@ -1,0 +1,166 @@
+x-airflow-common: &airflow-common
+  build: 
+    context: ./docker-scripts/airflow
+    dockerfile: Dockerfile
+  user: "${AIRFLOW_UID:-1000}:0"
+  env_file: &airflow-common-envfile
+    - .env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: ${AIRFLOW__CORE__SQL_ALCHEMY_CONN}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: ${AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION}
+    AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+    SPARK_MASTER: ${SPARK_MASTER_URL}
+  volumes: &common-volumes
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts
+    - ./data/orig:${AIRFLOW_VAR_SOURCE_DATA_PATH}
+    - ./data/splits:${AIRFLOW_VAR_DESTINATION_DATA_PATH}
+    - ./data/exports:${AIRFLOW_VAR_EXPORTS_DATA_PATH}
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  # --- LOCALSTACK (AWS Emulator) ---
+  localstack:
+    user: root
+    privileged: true
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,lambda,sns,sqs,dynamodb
+      - LAMBDA_EXECUTOR=docker
+      - DEBUG=1
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./localstack_scripts_init/init.sh:/etc/localstack/init/ready.d/init.sh" # Если нужно создать бакет при старте
+      - "./lambda_func:/tmp/lambda_func" # Папка со скриптами для lambda 
+
+  # --- POSTGRES (DB for Airflow) ---
+  postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER_AIRFLOW}
+      POSTGRES_PASSWORD: ${DB_PASSWORD_AIRFLOW}
+      POSTGRES_DB: ${DB_NAME_AIRFLOW}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  # --- AIRFLOW INIT (Migration) ---
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    env_file:  *airflow-common-envfile
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD}
+    volumes: *common-volumes
+    depends_on: *airflow-common-depends-on
+  # --- AIRFLOW WEBSERVER + SCHEDULER ---
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    container_name: localstack-airflow-webserver
+    restart: always
+    env_file: *airflow-common-envfile
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - ./data:/opt/airflow/data
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    container_name: localstack-airflow-scheduler
+    restart: always
+    env_file: *airflow-common-envfile
+    volumes: *common-volumes
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+  
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    container_name: localstack-airflow-triggerer
+    volumes: *common-volumes
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+
+  # --- SPARK CLUSTER ---
+  spark-master:
+    build: 
+      context: ./docker-scripts/spark
+      dockerfile: Dockerfile
+    # container_name: localstack-spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8081:8080" # Spark UI
+      - "7077:7077"
+    volumes: *common-volumes
+
+  spark-worker:
+    build: 
+      context: ./docker-scripts/spark
+      dockerfile: Dockerfile
+    # container_name: localstack-spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=${SPARK_MASTER_URL}
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-1}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-1G}
+    depends_on:
+      - spark-master
+    volumes: *common-volumes
+
+  livy:
+    build:
+      context: ./docker-scripts/livy
+      dockerfile: Dockerfile
+    container_name: localstack-livy
+    environment:
+      - SPARK_MASTER_ENDPOINT=${SPARK_MASTER_URL}
+      - LIVY_SPARK_MASTER=${SPARK_MASTER_URL}
+      - LIVY_SPARK_DEPLOY_MODE=client
+      - "SPARK_SUBMIT_OPTIONS=--conf spark.driver.host=livy"
+      - SPARK_CONF_DIR=/opt/bitnami/spark/conf
+    ports:
+      - "8998:8998"
+    depends_on:
+      - spark-master
+      - spark-worker
+    volumes:
+      - ./scripts/:/opt/livy/scripts
