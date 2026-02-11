@@ -1,0 +1,104 @@
+services:
+  spark-master:
+    build: .
+    container_name: spark-master
+    env_file:
+      - .env
+    environment:
+      # Настройки режима
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      
+      # СЕТЕВЫЕ НАСТРОЙКИ (Самое важное)
+      # 1. Привязываемся ко всем интерфейсам (решает проблему "next 16 ports")
+      - SPARK_MASTER_HOST=0.0.0.0
+      # 2. Какой порт использовать для RPC
+      - SPARK_MASTER_PORT=7077
+      # 3. Какой порт для Web UI
+      - SPARK_MASTER_WEBUI_PORT=8080
+      # 4. Как представляться воркерам (DNS имя в docker сети)
+      - SPARK_PUBLIC_DNS=spark-master
+    ports:
+      - "8080:8080" # Web UI Мастера
+      - "7077:7077" # Порт для подключения воркеров и submit jobs
+    volumes:
+      - ./scripts:/opt/spark/scripts # Папка для вашего кода
+      - ./data:/opt/spark/data # Папка для данных
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+
+  spark-worker:
+    build: .
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    env_file:
+      - .env
+    environment:
+      - SPARK_MODE=worker
+      # Привязываемся ко всем интерфейсам
+      - SPARK_WORKER_BIND_ADDRESS=0.0.0.0
+      # Порт Web UI воркера
+      - SPARK_WORKER_WEBUI_PORT=8081
+      # Ресурсы
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=1G
+    ports:
+      - "8081:8081" # Web UI Воркера
+    volumes:
+      - ./scripts:/opt/spark/scripts 
+      - ./data:/opt/spark/data 
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+  
+  spark-jupyter:
+    build: .
+    container_name: spark-jupyter
+    depends_on:
+      - spark-master
+      - pagila
+    env_file:
+      - .env
+    environment:
+      - SPARK_MODE=client
+      # Сообщаем воркерам, где искать драйвер (Jupyter)
+      - SPARK_DRIVER_HOST=spark-jupyter
+      - SPARK_DRIVER_BIND_ADDRESS=0.0.0.0
+    ports:
+      - "8888:8888" # Порт для входа в Jupyter
+      - "4040:4040" # Spark UI конкретно для вашей Jupyter-сессии
+    volumes:
+      - ./scripts:/opt/spark/scripts # Папка для вашего кода
+      - ./data:/opt/spark/data 
+    # Команда запуска Jupyter Lab
+    command: >
+      jupyter lab 
+      --ip=0.0.0.0 
+      --port=8888 
+      --no-browser 
+      --allow-root 
+      --NotebookApp.token='' 
+      --notebook-dir=/opt/spark/scripts
+  pagila:
+    image: postgres:17
+    container_name: pagila
+    env_file:
+      - .env
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_PAGILA}
+      POSTGRES_USER: ${POSTGRES_USER_PAGILA}
+      # По правилам надо расскоментировать, но изначальные SQL-скрипты были сделаны для пользователя postgres
+      # Поэтому здесь будет другая конфигурация
+      # POSTGRES_USER: ${POSTGRES_USER}
+      # POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./scripts/sql/pagila-schema.sql:/docker-entrypoint-initdb.d/1-pagila-schema.sql
+      - ./scripts/sql/pagila-data.sql:/docker-entrypoint-initdb.d/2-pagila-data.sql
+      - pgdata:/var/lib/postgresql/data
+    expose:
+      - 5434
+    ports:
+      - 5434:5432
+
+volumes:
+  pgdata:
