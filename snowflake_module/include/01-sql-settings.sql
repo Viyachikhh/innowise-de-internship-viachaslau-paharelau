@@ -1,0 +1,72 @@
+use database airline;
+use warehouse compute_wh;
+
+create or replace schema raw;
+create or replace schema stage;
+create or replace schema analytics;
+create or replace schema logging;
+create or replace schema security;
+
+create or replace role external_app;
+create or replace role eu_analytic;
+
+grant usage on warehouse compute_wh to role external_app;
+grant usage on database airline to role external_app;
+grant usage on all schemas in database airline to role external_app;
+grant usage on future schemas in database airline to role external_app;
+
+grant usage on warehouse compute_wh to role eu_analytic;
+grant usage on database airline to role eu_analytic;
+grant usage on schema analytics to role eu_analytic;
+
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA RAW TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE TABLES IN SCHEMA RAW  TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL VIEWS IN SCHEMA RAW TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE VIEWS IN SCHEMA RAW TO ROLE external_app;
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA STAGE TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE TABLES IN SCHEMA STAGE  TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL VIEWS IN SCHEMA STAGE TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE VIEWS IN SCHEMA STAGE TO ROLE external_app;
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA ANALYTICS TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE TABLES IN SCHEMA ANALYTICS  TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL VIEWS IN SCHEMA ANALYTICS TO ROLE external_app;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE VIEWS IN SCHEMA ANALYTICS TO ROLE external_app;
+
+GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA LOGGING TO ROLE external_app;
+GRANT SELECT, INSERT ON FUTURE TABLES IN SCHEMA LOGGING  TO ROLE external_app;
+GRANT SELECT, INSERT ON ALL VIEWS IN SCHEMA LOGGING TO ROLE external_app;
+GRANT SELECT, INSERT ON FUTURE VIEWS IN SCHEMA LOGGING TO ROLE external_app;
+
+GRANT SELECT ON ALL TABLES IN SCHEMA ANALYTICS TO ROLE eu_analytic;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA ANALYTICS  TO ROLE eu_analytic;
+
+GRANT SELECT ON ALL STREAMS IN SCHEMA raw TO ROLE external_app;
+GRANT SELECT ON FUTURE STREAMS IN SCHEMA raw TO ROLE external_app;
+GRANT SELECT ON ALL STREAMS IN SCHEMA STAGE TO ROLE external_app;
+GRANT SELECT ON FUTURE STREAMS IN SCHEMA STAGE TO ROLE external_app;
+
+GRANT USAGE ON ALL PROCEDURES IN SCHEMA raw TO ROLE external_app;
+GRANT USAGE ON FUTURE PROCEDURES IN SCHEMA raw TO ROLE external_app;
+GRANT USAGE ON ALL PROCEDURES IN SCHEMA STAGE TO ROLE external_app;
+GRANT USAGE ON FUTURE PROCEDURES IN SCHEMA STAGE TO ROLE external_app;
+
+
+CREATE OR REPLACE USER airflow
+    PASSWORD = 'STRONG_PASSWORD' 
+    LOGIN_NAME = 'airflow_app'
+    DEFAULT_ROLE = external_app
+    DEFAULT_WAREHOUSE = COMPUTE_WH
+    MUST_CHANGE_PASSWORD = FALSE;
+
+CREATE OR REPLACE USER eu_analytic
+    PASSWORD = 'ANOTHER_STRONG_PASSWORD' 
+    LOGIN_NAME = 'james_eu'
+    DEFAULT_ROLE = eu_analytic
+    DEFAULT_WAREHOUSE = COMPUTE_WH
+    MUST_CHANGE_PASSWORD = FALSE;
+
+GRANT ROLE external_app TO USER airflow;
+GRANT ROLE eu_analytic TO USER eu_analytic;

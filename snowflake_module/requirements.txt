@@ -1,0 +1,7 @@
+pandas
+requests
+apache-airflow-providers-postgres
+apache-airflow-providers-mongo
+apache-airflow-providers-snowflake
+apache-airflow-providers-celery
+apache-airflow-providers-fab
